@@ -1,97 +1,70 @@
-; ThreeCandlePattern EA v4.4 — SET A: MAX PROFIT
-; Goal: Maximize profit, accept moderate drawdown
-; Risk: Higher position size + larger TP targets + fewer but stronger entries
-;
-; === Risk Management ===
-InpRiskPercent=1.0
-InpFixedLotSize=0.01
-InpMaxDailyDrawdownPct=5.0
-InpMaxTotalDrawdownPct=10.0
-InpMaxPositions=1
-InpMaxDailyLosses=3
-InpCooldownBars=5
-;
-; === Trading Sessions ===
-InpUseLondonSession=true
-InpUseNYSession=true
-InpUseAsianSession=false
-InpUseCustomHours=false
-InpStartHour=7
-InpEndHour=16
-InpSessionWarmupMin=30
-InpCloseEndOfDay=false
-InpEODHour=20
-;
-; === Entry Patterns ===
-InpUseThreeCandle=true
-InpUseEngulfing=true
-InpUsePinBar=false
-InpPinBarWickRatio=2.0
-InpMinCandleBodyPips=0.0
-InpMinBodyRangeRatio=0.4
-InpEngulfMinBodyRatio=2.0
-;
-; === Entry Indicators ===
-InpFastEMAPeriod=10
-InpSlowEMAPeriod=21
-InpUseEMACrossover=true
-InpTrendEMAPeriod=50
-InpM15EMAPeriod=20
-InpUseTrendFilter=true
-InpUseM15Confluence=false
-;
-; === Momentum & Trend Filters ===
-InpATRPeriod=14
-InpRSIPeriod=14
-InpUseRSIFilter=true
-InpRSIOverbought=70.0
-InpRSIOversold=30.0
-InpMACDFast=12
-InpMACDSlow=26
-InpMACDSignal=9
-InpUseMACDFilter=false
-InpADXPeriod=14
-InpUseADXFilter=true
-InpADXMinTrend=20.0
-InpADXMaxChop=50.0
-;
-; === Volume Filter ===
-InpUseVolumeFilter=true
-InpVolumeMultiplier=1.2
-InpVolumePeriod=20
-;
-; === Spread Filter ===
-InpMaxSpreadPips=0.0
-;
-; === Stop Loss ===
-InpSLBufferTicks=5
-InpMinSL_ATRMult=1.0
-InpMinSLPoints=50
-InpMaxSL_ATRMult=2.0
-InpSwingLookback=7
-InpUseSwingSL=true
-;
-; === Take Profit ===
-InpTPMultiplier=3.0
-InpFixedTPTicks=0
-InpMinRRRatio=2.0
-;
-; === Partial Close ===
-InpUsePartialClose=false
-InpPartialClosePercent=50.0
-InpPartialCloseRR=1.0
-;
-; === Break-Even ===
-InpUseBreakEven=true
-InpBEPlusTicks=5
-;
-; === Trailing Stop ===
-InpUseTrailingStop=true
-InpTrailATRMult=1.0
-InpTrailMinProfitTicks=30
-InpUseSwingTrail=true
-InpSwingTrailBars=5
-;
-; === EA Settings ===
-InpMagicNumber=100005
-InpShowDashboard=true
+; ThreeCandlePattern EA v4.4 — SET A: MAX PROFIT
+; Goal: Maximize profit, accept moderate drawdown
+InpRiskPercent=1.0||0.5||0.05||5.0||N
+InpFixedLotSize=0.01||0.01||0.001||0.1||N
+InpMaxDailyDrawdownPct=5.0||3.0||0.3||30.0||N
+InpMaxTotalDrawdownPct=10.0||10.0||1.0||100.0||N
+InpMaxPositions=1||1||1||10||N
+InpMaxDailyLosses=3||5||1||50||N
+InpCooldownBars=5||8||1||80||N
+InpUseLondonSession=true||false||0||true||N
+InpUseNYSession=true||false||0||true||N
+InpUseAsianSession=false||false||0||true||N
+InpUseCustomHours=false||false||0||true||N
+InpStartHour=7||7||1||16||N
+InpEndHour=16||7||1||16||N
+InpSessionWarmupMin=30||30||1||60||N
+InpCloseEndOfDay=false||false||0||true||N
+InpEODHour=20||20||1||23||N
+InpUseThreeCandle=true||false||0||true||N
+InpUseEngulfing=true||false||0||true||N
+InpUsePinBar=false||false||0||true||N
+InpPinBarWickRatio=2.0||2.0||0.1||5.0||N
+InpMinCandleBodyPips=0.0||0.0||0.5||5.0||N
+InpMinBodyRangeRatio=0.4||0.3||0.1||0.7||N
+InpEngulfMinBodyRatio=2.0||1.0||0.1||3.0||N
+InpFastEMAPeriod=10||5||1||20||N
+InpSlowEMAPeriod=21||15||1||30||N
+InpUseEMACrossover=true||false||0||true||N
+InpTrendEMAPeriod=50||20||5||100||N
+InpM15EMAPeriod=20||10||5||50||N
+InpUseTrendFilter=true||false||0||true||N
+InpUseM15Confluence=false||false||0||true||N
+InpATRPeriod=14||7||1||21||N
+InpRSIPeriod=14||7||1||21||N
+InpUseRSIFilter=true||false||0||true||N
+InpRSIOverbought=70.0||60.0||5.0||80.0||N
+InpRSIOversold=30.0||20.0||5.0||40.0||N
+InpMACDFast=12||8||1||16||N
+InpMACDSlow=26||20||1||32||N
+InpMACDSignal=9||5||1||13||N
+InpUseMACDFilter=false||false||0||true||N
+InpADXPeriod=14||7||1||21||N
+InpUseADXFilter=true||false||0||true||N
+InpADXMinTrend=20.0||15.0||2.0||30.0||N
+InpADXMaxChop=50.0||40.0||5.0||60.0||N
+InpUseVolumeFilter=true||false||0||true||N
+InpVolumeMultiplier=1.2||1.0||0.1||2.0||N
+InpVolumePeriod=20||10||5||30||N
+InpMaxSpreadPips=0.0||0.0||0.5||5.0||N
+InpSLBufferTicks=5||3||1||10||N
+InpMinSL_ATRMult=1.0||0.5||0.1||2.0||N
+InpMinSLPoints=50||30||10||100||N
+InpMaxSL_ATRMult=2.0||1.5||0.1||3.0||N
+InpSwingLookback=7||5||1||15||N
+InpUseSwingSL=true||false||0||true||N
+InpTPMultiplier=3.0||2.0||0.5||5.0||N
+InpFixedTPTicks=0||0||10||100||N
+InpMinRRRatio=2.0||1.0||0.5||3.0||N
+InpUsePartialClose=false||false||0||true||N
+InpPartialClosePercent=50.0||25.0||5.0||75.0||N
+InpPartialCloseRR=1.0||0.5||0.5||2.0||N
+InpUseBreakEven=true||false||0||true||N
+InpBEPlusTicks=5||2||1||10||N
+InpUseTrailingStop=true||false||0||true||N
+InpTrailATRMult=1.0||0.5||0.1||2.0||N
+InpTrailMinProfitTicks=30||20||5||50||N
+InpUseSwingTrail=true||false||0||true||N
+InpSwingTrailBars=5||3||1||10||N
+InpMagicNumber=100005||100005||1||100005||N
+InpShowDashboard=true||false||0||true||N
