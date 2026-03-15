@@ -1,0 +1,97 @@
+; ThreeCandlePattern EA v4.4 — SET A: MAX PROFIT
+; Goal: Maximize profit, accept moderate drawdown
+; Risk: Higher position size + larger TP targets + fewer but stronger entries
+;
+; === Risk Management ===
+InpRiskPercent=1.0
+InpFixedLotSize=0.01
+InpMaxDailyDrawdownPct=5.0
+InpMaxTotalDrawdownPct=10.0
+InpMaxPositions=1
+InpMaxDailyLosses=3
+InpCooldownBars=5
+;
+; === Trading Sessions ===
+InpUseLondonSession=true
+InpUseNYSession=true
+InpUseAsianSession=false
+InpUseCustomHours=false
+InpStartHour=7
+InpEndHour=16
+InpSessionWarmupMin=30
+InpCloseEndOfDay=false
+InpEODHour=20
+;
+; === Entry Patterns ===
+InpUseThreeCandle=true
+InpUseEngulfing=true
+InpUsePinBar=false
+InpPinBarWickRatio=2.0
+InpMinCandleBodyPips=0.0
+InpMinBodyRangeRatio=0.4
+InpEngulfMinBodyRatio=2.0
+;
+; === Entry Indicators ===
+InpFastEMAPeriod=10
+InpSlowEMAPeriod=21
+InpUseEMACrossover=true
+InpTrendEMAPeriod=50
+InpM15EMAPeriod=20
+InpUseTrendFilter=true
+InpUseM15Confluence=false
+;
+; === Momentum & Trend Filters ===
+InpATRPeriod=14
+InpRSIPeriod=14
+InpUseRSIFilter=true
+InpRSIOverbought=70.0
+InpRSIOversold=30.0
+InpMACDFast=12
+InpMACDSlow=26
+InpMACDSignal=9
+InpUseMACDFilter=false
+InpADXPeriod=14
+InpUseADXFilter=true
+InpADXMinTrend=20.0
+InpADXMaxChop=50.0
+;
+; === Volume Filter ===
+InpUseVolumeFilter=true
+InpVolumeMultiplier=1.2
+InpVolumePeriod=20
+;
+; === Spread Filter ===
+InpMaxSpreadPips=0.0
+;
+; === Stop Loss ===
+InpSLBufferTicks=5
+InpMinSL_ATRMult=1.0
+InpMinSLPoints=50
+InpMaxSL_ATRMult=2.0
+InpSwingLookback=7
+InpUseSwingSL=true
+;
+; === Take Profit ===
+InpTPMultiplier=3.0
+InpFixedTPTicks=0
+InpMinRRRatio=2.0
+;
+; === Partial Close ===
+InpUsePartialClose=false
+InpPartialClosePercent=50.0
+InpPartialCloseRR=1.0
+;
+; === Break-Even ===
+InpUseBreakEven=true
+InpBEPlusTicks=5
+;
+; === Trailing Stop ===
+InpUseTrailingStop=true
+InpTrailATRMult=1.0
+InpTrailMinProfitTicks=30
+InpUseSwingTrail=true
+InpSwingTrailBars=5
+;
+; === EA Settings ===
+InpMagicNumber=100005
+InpShowDashboard=true

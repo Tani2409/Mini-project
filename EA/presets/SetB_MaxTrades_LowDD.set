@@ -1,0 +1,97 @@
+; ThreeCandlePattern EA v4.4 — SET B: MAX TRADES + LOW DRAWDOWN
+; Goal: More trade opportunities, controlled risk, small consistent profit
+; Risk: Smaller position size + relaxed filters + strict drawdown limits
+;
+; === Risk Management ===
+InpRiskPercent=0.3
+InpFixedLotSize=0.01
+InpMaxDailyDrawdownPct=2.0
+InpMaxTotalDrawdownPct=6.0
+InpMaxPositions=1
+InpMaxDailyLosses=5
+InpCooldownBars=3
+;
+; === Trading Sessions ===
+InpUseLondonSession=true
+InpUseNYSession=true
+InpUseAsianSession=false
+InpUseCustomHours=false
+InpStartHour=7
+InpEndHour=16
+InpSessionWarmupMin=30
+InpCloseEndOfDay=false
+InpEODHour=20
+;
+; === Entry Patterns ===
+InpUseThreeCandle=true
+InpUseEngulfing=true
+InpUsePinBar=false
+InpPinBarWickRatio=2.0
+InpMinCandleBodyPips=0.0
+InpMinBodyRangeRatio=0.3
+InpEngulfMinBodyRatio=1.2
+;
+; === Entry Indicators ===
+InpFastEMAPeriod=10
+InpSlowEMAPeriod=21
+InpUseEMACrossover=true
+InpTrendEMAPeriod=50
+InpM15EMAPeriod=20
+InpUseTrendFilter=true
+InpUseM15Confluence=false
+;
+; === Momentum & Trend Filters ===
+InpATRPeriod=14
+InpRSIPeriod=14
+InpUseRSIFilter=true
+InpRSIOverbought=70.0
+InpRSIOversold=30.0
+InpMACDFast=12
+InpMACDSlow=26
+InpMACDSignal=9
+InpUseMACDFilter=false
+InpADXPeriod=14
+InpUseADXFilter=true
+InpADXMinTrend=20.0
+InpADXMaxChop=0.0
+;
+; === Volume Filter ===
+InpUseVolumeFilter=false
+InpVolumeMultiplier=1.2
+InpVolumePeriod=20
+;
+; === Spread Filter ===
+InpMaxSpreadPips=0.0
+;
+; === Stop Loss ===
+InpSLBufferTicks=5
+InpMinSL_ATRMult=1.0
+InpMinSLPoints=50
+InpMaxSL_ATRMult=2.0
+InpSwingLookback=7
+InpUseSwingSL=true
+;
+; === Take Profit ===
+InpTPMultiplier=2.0
+InpFixedTPTicks=0
+InpMinRRRatio=1.0
+;
+; === Partial Close ===
+InpUsePartialClose=true
+InpPartialClosePercent=50.0
+InpPartialCloseRR=1.0
+;
+; === Break-Even ===
+InpUseBreakEven=true
+InpBEPlusTicks=2
+;
+; === Trailing Stop ===
+InpUseTrailingStop=true
+InpTrailATRMult=1.5
+InpTrailMinProfitTicks=30
+InpUseSwingTrail=true
+InpSwingTrailBars=5
+;
+; === EA Settings ===
+InpMagicNumber=100006
+InpShowDashboard=true
