@@ -1,18 +1,17 @@
 //+------------------------------------------------------------------+
 //|                              ThreeCandlePattern_EA_v4.mq5        |
-//|       Three-Candle Pattern EA — Version 4.4 (Filter Reduced)   |
+//|       Three-Candle Pattern EA — Version 4.5 (Trail Fix)        |
 //|                                                                  |
-//|  KEY CHANGES v4.4 from v4.3:                                     |
-//|  1. Disable 3CP & PINBAR (low WR), focus on ENGULF (best WR)    |
-//|  2. Re-enable Volume Filter (filters low-quality entries)        |
-//|  3. Increase TP Multiplier 2.0 -> 2.5 for better R:R            |
-//|  4. Disable Partial Close to preserve full R:R potential         |
-//|  5. Disable MACD filter (causes late entries)                    |
-//|  6. Disable EMA Slope filter (too restrictive)                   |
-//|  7. ADXMaxChop 40 -> 50 (less restrictive)                      |
+//|  KEY CHANGES v4.5 from v4.4:                                     |
+//|  1. FIX: Break-even & trailing stop now work independently       |
+//|     of partial close (were gated behind partialClosed flag)      |
+//|  2. BE triggers at InpBETriggerRR (R:R reached) instead of       |
+//|     only after partial close                                     |
+//|  3. Trailing stop activates after profit threshold, not after    |
+//|     partial close only                                           |
 //+------------------------------------------------------------------+
 #property copyright "Three Candle Pattern EA v4 — Pro"
-#property version   "4.40"
+#property version   "4.50"
 #property strict
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
@@ -99,8 +98,9 @@ input double   InpPartialClosePercent = 50.0;    // % of Position to Close
 input double   InpPartialCloseRR      = 1.0;     // Close Partial at R:R (e.g. 1.0 = 1:1)
 
 input group "=== Break-Even ==="
-input bool     InpUseBreakEven        = true;    // Enable Break-Even (after partial close)
+input bool     InpUseBreakEven        = true;    // Enable Break-Even
 input int      InpBEPlusTicks         = 2;       // BE Lock-in (Ticks above entry)
+input double   InpBETriggerRR         = 1.0;     // Move to BE when price reaches this R:R (0 = after partial close only)
 
 input group "=== Trailing Stop ==="
 input bool     InpUseTrailingStop     = true;    // Enable Trailing Stop
@@ -250,7 +250,7 @@ int OnInit()
    totalWinsDay      = 0;
    ArrayResize(partialInfo, 0);
 
-   Print("=== ThreeCandlePattern EA v4 PRO Initialized ===");
+   Print("=== ThreeCandlePattern EA v4.5 PRO Initialized ===");
    Print("Symbol: ", _Symbol, " | Risk: ", InpRiskPercent > 0 ?
          DoubleToString(InpRiskPercent, 1) + "%" : DoubleToString(InpFixedLotSize, 2) + " lots");
    Print("Patterns: 3CP=", InpUseThreeCandle ? "ON" : "OFF",
@@ -1143,37 +1143,61 @@ void ManageOpenPositions()
          }
       }
 
-      //=== BREAK-EVEN (after partial close) ===
-      if(InpUseBreakEven && idx >= 0 && partialInfo[idx].partialClosed && !partialInfo[idx].movedToBE)
+      //=== BREAK-EVEN ===
+      // Can trigger either: (a) after partial close, or (b) when price reaches BETriggerRR
+      if(InpUseBreakEven && idx >= 0 && !partialInfo[idx].movedToBE)
       {
-         if(posType == POSITION_TYPE_BUY)
+         bool triggerBE = partialInfo[idx].partialClosed; // original: after partial close
+         
+         // NEW: Also trigger BE when price reaches InpBETriggerRR (works without partial close)
+         if(!triggerBE && InpBETriggerRR > 0)
          {
-            double beLevel = NormalizeDouble(openPx + (InpBEPlusTicks * tickSize), _Digits);
-            if(currentSL < beLevel)
+            double slDist = MathAbs(openPx - partialInfo[idx].originalSL);
+            if(posType == POSITION_TYPE_BUY)
             {
-               if(trade.PositionModify(ticket, beLevel, currentTP))
-               {
-                  partialInfo[idx].movedToBE = true;
-                  Print("BUY moved to BE+", InpBEPlusTicks, " ticks");
-               }
+               double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+               if(slDist > 0 && (bid - openPx) >= slDist * InpBETriggerRR)
+                  triggerBE = true;
+            }
+            else if(posType == POSITION_TYPE_SELL)
+            {
+               double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+               if(slDist > 0 && (openPx - ask) >= slDist * InpBETriggerRR)
+                  triggerBE = true;
             }
          }
-         else if(posType == POSITION_TYPE_SELL)
+         
+         if(triggerBE)
          {
-            double beLevel = NormalizeDouble(openPx - (InpBEPlusTicks * tickSize), _Digits);
-            if(currentSL > beLevel || currentSL == 0)
+            if(posType == POSITION_TYPE_BUY)
             {
-               if(trade.PositionModify(ticket, beLevel, currentTP))
+               double beLevel = NormalizeDouble(openPx + (InpBEPlusTicks * tickSize), _Digits);
+               if(currentSL < beLevel)
                {
-                  partialInfo[idx].movedToBE = true;
-                  Print("SELL moved to BE+", InpBEPlusTicks, " ticks");
+                  if(trade.PositionModify(ticket, beLevel, currentTP))
+                  {
+                     partialInfo[idx].movedToBE = true;
+                     Print("BUY moved to BE+", InpBEPlusTicks, " ticks");
+                  }
+               }
+            }
+            else if(posType == POSITION_TYPE_SELL)
+            {
+               double beLevel = NormalizeDouble(openPx - (InpBEPlusTicks * tickSize), _Digits);
+               if(currentSL > beLevel || currentSL == 0)
+               {
+                  if(trade.PositionModify(ticket, beLevel, currentTP))
+                  {
+                     partialInfo[idx].movedToBE = true;
+                     Print("SELL moved to BE+", InpBEPlusTicks, " ticks");
+                  }
                }
             }
          }
       }
 
-      //=== TRAILING STOP (after partial close for safety) ===
-      if(InpUseTrailingStop && idx >= 0 && partialInfo[idx].partialClosed)
+      //=== TRAILING STOP (after BE is locked in) ===
+      if(InpUseTrailingStop && idx >= 0 && partialInfo[idx].movedToBE)
       {
          if(posType == POSITION_TYPE_BUY)
          {
