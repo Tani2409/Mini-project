@@ -1,26 +1,25 @@
-; SET A v3: MAX PROFIT — ENGULF only + BE/Trail fix (v4.5 REQUIRED)
+; SET A v3: MAX PROFIT — ENGULF only + BE-only fix (v4.5 REQUIRED)
 ; Based on SetA_v2 (g.xlsx): PF=1.71, R:R=3.43x, 18 trades/6mo
-; v3-draft (i.xlsx) showed relaxing pattern filters killed PF→0.99
+;
+; LESSONS LEARNED:
+; - i.xlsx: relaxing pattern filters killed PF→0.99 (bad entries)
+; - j.xlsx: trailing stop killed R:R from 3.43→0.78 (only 1/35 hit TP!)
+;   Trail exited 15 trades at avg $6.14 instead of $20-30 at TP
 ;
 ; IMPORTANT: This preset REQUIRES v4.5 EA code (with BETriggerRR fix)
-; Without v4.5, BE and trailing stop will NOT work!
 ;
-; Strategy: Keep v2's strict pattern filters (proven quality),
-; only relax operational limits + use BE/Trail to protect profits.
+; Strategy: v2 strict filters + BE-only (NO trailing stop)
+; - BE at 1R protects against full reversals (SL loss → BE exit)
+; - NO trailing = lets winners run to full TP (preserves R:R)
 ;
 ; Changes vs v2:
-; 1. KEEP EngulfMinBodyRatio=2.0 (strict — proven quality filter)
-; 2. KEEP MinBodyRangeRatio=0.4 (strict — filters bad candles)
-; 3. KEEP VolumeMultiplier=1.2 (strict — filters low-vol noise)
-; 4. CooldownBars 5→3 (faster re-entry, doesn't affect quality)
-; 5. MaxDailyLosses 3→4 (one more chance per day)
-; 6. TPMultiplier 3.0→2.5 (slightly easier to hit TP)
-; 7. MinRRRatio 2.0→1.8 (marginal relaxation only)
-; 8. NEW: BETriggerRR=1.0 (lock BE at 1R — main improvement)
-; 9. TrailATRMult stays 1.0 (tight trail after BE locks in)
-;
-; Expected vs v2: similar trade count + BE converts some SL→BE exits
-; → higher effective WR, better PF
+; 1. KEEP all strict pattern filters (EngulfMinBodyRatio=2.0, etc)
+; 2. CooldownBars 5→3 (faster re-entry)
+; 3. MaxDailyLosses 3→4 (one more chance/day)
+; 4. TPMultiplier 3.0→2.5 (slightly easier TP hit)
+; 5. MinRRRatio 2.0→1.8 (marginal relaxation)
+; 6. NEW: BETriggerRR=1.0 (lock BE at 1R)
+; 7. DISABLED: Trailing stop (was killing all big winners)
 InpRiskPercent=1.0||0||0||0||N
 InpFixedLotSize=0.01||0||0||0||N
 InpMaxDailyDrawdownPct=5.0||0||0||0||N
@@ -83,7 +82,7 @@ InpPartialCloseRR=1.0||0||0||0||N
 InpUseBreakEven=true||0||0||0||N
 InpBEPlusTicks=5||0||0||0||N
 InpBETriggerRR=1.0||0||0||0||N
-InpUseTrailingStop=true||0||0||0||N
+InpUseTrailingStop=false||0||0||0||N
 InpTrailATRMult=1.0||0||0||0||N
 InpTrailMinProfitTicks=30||0||0||0||N
 InpUseSwingTrail=true||0||0||0||N
