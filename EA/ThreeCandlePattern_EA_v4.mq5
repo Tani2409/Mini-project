@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                              ThreeCandlePattern_EA_v4.mq5        |
-//|       Three-Candle Pattern EA — Version 4.2 (Deep Optimized)    |
+//|       Three-Candle Pattern EA — Version 4.3 (Profit Optimized)  |
 //|                                                                  |
 //|  KEY CHANGES from v3:                                            |
 //|  1. Dynamic position sizing (risk % of equity per trade)         |
@@ -18,7 +18,7 @@
 //| 13. Optimized for ETO broker and backtesting                     |
 //+------------------------------------------------------------------+
 #property copyright "Three Candle Pattern EA v4 — Pro"
-#property version   "4.20"
+#property version   "4.30"
 #property strict
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
@@ -26,7 +26,7 @@
 //=== Input Parameters ====================================================
 
 input group "=== Risk Management ==="
-input double   InpRiskPercent          = 1.0;     // Risk Per Trade (% of Equity) — 0 = fixed lot
+input double   InpRiskPercent          = 0.5;     // Risk Per Trade (% of Equity) — 0 = fixed lot
 input double   InpFixedLotSize        = 0.01;    // Fixed Lot Size (if RiskPercent = 0)
 input double   InpMaxDailyDrawdownPct = 3.0;     // Max Daily Drawdown (% of Balance) — 0 = off
 input double   InpMaxTotalDrawdownPct = 10.0;    // Max Total Drawdown (% of Balance) — 0 = off
@@ -48,7 +48,7 @@ input int      InpEODHour             = 20;      // End of Day Hour (Server Time
 input group "=== Entry Patterns ==="
 input bool     InpUseThreeCandle      = true;    // Use Three-Candle Reversal Pattern
 input bool     InpUseEngulfing        = true;    // Use Engulfing Pattern
-input bool     InpUsePinBar           = true;    // Use Pin Bar Pattern
+input bool     InpUsePinBar           = false;   // Use Pin Bar Pattern (disabled: 28% WR in backtest)
 input double   InpPinBarWickRatio     = 2.0;     // Pin Bar: Min Wick/Body Ratio
 input double   InpMinCandleBodyPips   = 0.0;     // Min Entry Candle Body (Pips) — 0 = off
 input double   InpMinBodyRangeRatio   = 0.4;     // Min Body/Range Ratio (candle quality)
@@ -97,6 +97,7 @@ input bool     InpUseSwingSL          = true;    // Use Swing-Based SL (vs candl
 input group "=== Take Profit ==="
 input double   InpTPMultiplier        = 2.0;     // TP Multiplier (x SL distance)
 input int      InpFixedTPTicks        = 0;       // Fixed TP (Ticks) — 0 = use multiplier
+input double   InpMinRRRatio          = 1.5;     // Min R:R Ratio to Enter (0 = off)
 
 input group "=== Partial Close ==="
 input bool     InpUsePartialClose     = true;    // Enable Partial Close
@@ -751,7 +752,11 @@ int DetectThreeCandlePattern(double fastEma)
    double range1 = high1 - low1;
    if(range1 <= 0 || body1 / range1 < 0.5) return 0; // stricter quality for 3CP
 
-   // BUY: 2 bearish + 1 bullish
+   // Get ATR for pullback distance check
+   double atr = GetATR();
+   if(atr <= 0) return 0;
+
+   // BUY: 2 bearish + 1 bullish (pullback-to-EMA reversal)
    bool c3Bear = (close3 < open3);
    bool c2Bear = (close2 < open2);
    bool c1Bull = (close1 > open1);
@@ -762,12 +767,17 @@ int DetectThreeCandlePattern(double fastEma)
       // Must close above previous highs AND above BOTH EMAs
       if(close1 > highPrev && close1 > fastEma && close1 > slowEma)
       {
+         // Pullback check: bearish candles must have come NEAR the EMA (within 1.5x ATR)
+         // This ensures the pattern is a pullback-to-support, not a random bounce
+         double pullbackLow = MathMin(low2, low3);
+         if(pullbackLow > fastEma + atr * 1.5) return 0; // price never pulled back to EMA
+
          if(IsCandleQualityOK(open1, close1, high1, low1))
             return +1; // BUY signal
       }
    }
 
-   // SELL: 2 bullish + 1 bearish
+   // SELL: 2 bullish + 1 bearish (pullback-to-EMA reversal)
    bool c3Bull = (close3 > open3);
    bool c2Bull = (close2 > open2);
    bool c1Bear = (close1 < open1);
@@ -778,6 +788,10 @@ int DetectThreeCandlePattern(double fastEma)
       // Must close below previous lows AND below BOTH EMAs
       if(close1 < lowPrev && close1 < fastEma && close1 < slowEma)
       {
+         // Pullback check: bullish candles must have come NEAR the EMA (within 1.5x ATR)
+         double pullbackHigh = MathMax(high2, high3);
+         if(pullbackHigh < fastEma - atr * 1.5) return 0; // price never pulled back to EMA
+
          if(IsCandleQualityOK(open1, close1, high1, low1))
             return -1; // SELL signal
       }
@@ -1416,6 +1430,19 @@ bool ExecuteTrade(int direction, string patternName)
    if(slDist <= 0) { Print(patternName, " skip: Invalid SL distance"); return false; }
 
    tpPrice = CalculateTPPrice(direction, entryPrice, slDist);
+   double tpDist = MathAbs(tpPrice - entryPrice);
+
+   // Minimum R:R check — skip trades where reward doesn't justify risk
+   if(InpMinRRRatio > 0 && slDist > 0)
+   {
+      double actualRR = tpDist / slDist;
+      if(actualRR < InpMinRRRatio)
+      {
+         Print(patternName, " skip: R:R ", DoubleToString(actualRR, 2),
+               " < min ", DoubleToString(InpMinRRRatio, 2));
+         return false;
+      }
+   }
 
    //=== CALCULATE LOT SIZE ===
    double lotSize = CalculateLotSize(slDist);
