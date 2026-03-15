@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                              ThreeCandlePattern_EA_v4.mq5        |
-//|           Three-Candle Pattern EA — Version 4 (Pro Optimized)    |
+//|       Three-Candle Pattern EA — Version 4.1 (Backtest Optimized) |
 //|                                                                  |
 //|  KEY CHANGES from v3:                                            |
 //|  1. Dynamic position sizing (risk % of equity per trade)         |
@@ -18,7 +18,7 @@
 //| 13. Optimized for ETO broker and backtesting                     |
 //+------------------------------------------------------------------+
 #property copyright "Three Candle Pattern EA v4 — Pro"
-#property version   "4.00"
+#property version   "4.10"
 #property strict
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
@@ -32,7 +32,7 @@ input double   InpMaxDailyDrawdownPct = 3.0;     // Max Daily Drawdown (% of Bal
 input double   InpMaxTotalDrawdownPct = 10.0;    // Max Total Drawdown (% of Balance) — 0 = off
 input int      InpMaxPositions        = 1;       // Max Open Positions — 0 = unlimited
 input int      InpMaxDailyLosses      = 5;       // Max Daily Losses — 0 = unlimited
-input int      InpCooldownBars        = 3;       // Cooldown Bars After Loss — 0 = off
+input int      InpCooldownBars        = 5;       // Cooldown Bars After Loss — 0 = off
 
 input group "=== Trading Sessions ==="
 input bool     InpUseLondonSession    = true;    // Trade London Session (07:00-11:00 UTC)
@@ -41,6 +41,7 @@ input bool     InpUseAsianSession     = false;   // Trade Asian Session (00:00-0
 input bool     InpUseCustomHours      = false;   // Use Custom Hours Instead
 input int      InpStartHour           = 7;       // Custom Start Hour (Server Time)
 input int      InpEndHour             = 16;      // Custom End Hour (Server Time)
+input int      InpSessionWarmupMin    = 30;      // Skip First N Minutes of Session Start
 input bool     InpCloseEndOfDay       = false;   // Close All Positions at End of Day
 input int      InpEODHour             = 20;      // End of Day Hour (Server Time)
 
@@ -50,11 +51,13 @@ input bool     InpUseEngulfing        = true;    // Use Engulfing Pattern
 input bool     InpUsePinBar           = true;    // Use Pin Bar Pattern
 input double   InpPinBarWickRatio     = 2.0;     // Pin Bar: Min Wick/Body Ratio
 input double   InpMinCandleBodyPips   = 0.0;     // Min Entry Candle Body (Pips) — 0 = off
-input double   InpMinBodyRangeRatio   = 0.3;     // Min Body/Range Ratio (candle quality)
+input double   InpMinBodyRangeRatio   = 0.4;     // Min Body/Range Ratio (candle quality)
+input double   InpEngulfMinBodyRatio  = 1.5;     // Engulfing: Entry body must be > prev body x this
 
 input group "=== Entry Indicators ==="
 input int      InpFastEMAPeriod       = 10;      // Fast EMA Period (M5)
 input int      InpSlowEMAPeriod       = 21;      // Slow EMA Period (M5) — EMA crossover
+input bool     InpUseEMACrossover     = true;    // Require EMA Crossover (Fast vs Slow)
 input int      InpTrendEMAPeriod      = 50;      // Trend EMA Period (H1) — 0 = off
 input int      InpM15EMAPeriod        = 20;      // M15 Structure EMA — 0 = off
 input bool     InpUseTrendFilter      = true;    // Use H1 Trend Filter
@@ -87,17 +90,18 @@ input group "=== Stop Loss ==="
 input int      InpSLBufferTicks       = 5;       // SL Buffer (Ticks beyond swing/candle)
 input double   InpMinSL_ATRMult       = 1.0;     // Min SL = ATR x Mult — 0 = off
 input int      InpMinSLPoints         = 50;      // Minimum SL Distance (Points) — safety net
-input int      InpSwingLookback       = 10;      // Swing High/Low Lookback Bars for SL
+input double   InpMaxSL_ATRMult       = 2.5;     // Max SL = ATR x Mult — caps catastrophic losses
+input int      InpSwingLookback       = 7;       // Swing High/Low Lookback Bars for SL
 input bool     InpUseSwingSL          = true;    // Use Swing-Based SL (vs candle-based)
 
 input group "=== Take Profit ==="
-input double   InpTPMultiplier        = 2.0;     // TP Multiplier (x SL distance)
+input double   InpTPMultiplier        = 2.5;     // TP Multiplier (x SL distance)
 input int      InpFixedTPTicks        = 0;       // Fixed TP (Ticks) — 0 = use multiplier
 
 input group "=== Partial Close ==="
 input bool     InpUsePartialClose     = true;    // Enable Partial Close
 input double   InpPartialClosePercent = 50.0;    // % of Position to Close
-input double   InpPartialCloseRR      = 1.0;     // Close Partial at R:R (e.g. 1.0 = 1:1)
+input double   InpPartialCloseRR      = 1.5;     // Close Partial at R:R (e.g. 1.5 = 1:1.5)
 
 input group "=== Break-Even ==="
 input bool     InpUseBreakEven        = true;    // Enable Break-Even (after partial close)
@@ -314,13 +318,26 @@ bool IsWithinTradingHours()
    }
 
    // Session-based trading
+   int minute = dt.min;
    bool inSession = false;
-   if(InpUseLondonSession && hour >= 7 && hour < 11)   inSession = true;
-   if(InpUseNYSession && hour >= 12 && hour < 16)      inSession = true;
-   if(InpUseAsianSession && hour >= 0 && hour < 3)     inSession = true;
-   // London-NY overlap (highest volume)
-   if(InpUseLondonSession && InpUseNYSession && hour >= 12 && hour < 16)
-      inSession = true;
+   // London session with warmup
+   if(InpUseLondonSession)
+   {
+      if(hour == 7 && minute >= InpSessionWarmupMin) inSession = true;
+      else if(hour > 7 && hour < 11) inSession = true;
+   }
+   // NY session with warmup
+   if(InpUseNYSession)
+   {
+      if(hour == 12 && minute >= InpSessionWarmupMin) inSession = true;
+      else if(hour > 12 && hour < 16) inSession = true;
+   }
+   // Asian session with warmup
+   if(InpUseAsianSession)
+   {
+      if(hour == 0 && minute >= InpSessionWarmupMin) inSession = true;
+      else if(hour > 0 && hour < 3) inSession = true;
+   }
 
    return inSession;
 }
@@ -458,6 +475,23 @@ bool GetEMAValues(double &fastEma, double &slowEma)
       slowEma = fastEma;
 
    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Check EMA crossover alignment                                    |
+//| BUY: fastEMA > slowEMA, SELL: fastEMA < slowEMA                  |
+//+------------------------------------------------------------------+
+int GetEMACrossoverDirection()
+{
+   if(!InpUseEMACrossover || slowEmaHandle == INVALID_HANDLE) return 0;
+   double fastBuf[], slowBuf[];
+   ArraySetAsSeries(fastBuf, true);
+   ArraySetAsSeries(slowBuf, true);
+   if(CopyBuffer(fastEmaHandle, 0, 0, 3, fastBuf) < 3) return 0;
+   if(CopyBuffer(slowEmaHandle, 0, 0, 3, slowBuf) < 3) return 0;
+   if(fastBuf[1] > slowBuf[1]) return +1; // bullish alignment
+   if(fastBuf[1] < slowBuf[1]) return -1; // bearish alignment
+   return 0;
 }
 
 //+------------------------------------------------------------------+
@@ -728,24 +762,36 @@ int DetectEngulfingPattern(double fastEma)
    double open1 = iOpen(_Symbol, PERIOD_M5, 1), close1 = iClose(_Symbol, PERIOD_M5, 1);
    double high1 = iHigh(_Symbol, PERIOD_M5, 1), low1 = iLow(_Symbol, PERIOD_M5, 1);
    double open2 = iOpen(_Symbol, PERIOD_M5, 2), close2 = iClose(_Symbol, PERIOD_M5, 2);
+   double open3 = iOpen(_Symbol, PERIOD_M5, 3), close3 = iClose(_Symbol, PERIOD_M5, 3);
 
-   if(open1 == 0 || open2 == 0) return 0;
+   if(open1 == 0 || open2 == 0 || open3 == 0) return 0;
 
-   // Bullish Engulfing
+   double body1 = MathAbs(close1 - open1);
+   double body2 = MathAbs(close2 - open2);
+
+   // Bullish Engulfing — tightened criteria
    if(close2 < open2 && close1 > open1) // bar2 bearish, bar1 bullish
    {
       if(open1 <= close2 && close1 >= open2) // bar1 body engulfs bar2 body
       {
+         // Entry body must be significantly larger than previous
+         if(body2 > 0 && body1 < body2 * InpEngulfMinBodyRatio) return 0;
+         // Require context: bar3 should also be bearish (confirms reversal after downmove)
+         if(close3 >= open3) return 0; // bar3 not bearish = weak setup
          if(close1 > fastEma && IsCandleQualityOK(open1, close1, high1, low1))
             return +1;
       }
    }
 
-   // Bearish Engulfing
+   // Bearish Engulfing — tightened criteria
    if(close2 > open2 && close1 < open1) // bar2 bullish, bar1 bearish
    {
       if(open1 >= close2 && close1 <= open2) // bar1 body engulfs bar2 body
       {
+         // Entry body must be significantly larger than previous
+         if(body2 > 0 && body1 < body2 * InpEngulfMinBodyRatio) return 0;
+         // Require context: bar3 should also be bullish (confirms reversal after upmove)
+         if(close3 <= open3) return 0; // bar3 not bullish = weak setup
          if(close1 < fastEma && IsCandleQualityOK(open1, close1, high1, low1))
             return -1;
       }
@@ -823,6 +869,14 @@ double CalculateSLPrice(int direction, double atr, double entryPrice)
          if((entryPrice - slPrice) < minSLDist)
             slPrice = entryPrice - minSLDist;
       }
+
+      // MAX SL cap — prevent catastrophic losses
+      if(atr > 0 && InpMaxSL_ATRMult > 0)
+      {
+         double maxSLDist = atr * InpMaxSL_ATRMult;
+         if((entryPrice - slPrice) > maxSLDist)
+            slPrice = entryPrice - maxSLDist;
+      }
    }
    else // SELL
    {
@@ -845,6 +899,14 @@ double CalculateSLPrice(int direction, double atr, double entryPrice)
          double minSLDist = InpMinSLPoints * point;
          if((slPrice - entryPrice) < minSLDist)
             slPrice = entryPrice + minSLDist;
+      }
+
+      // MAX SL cap — prevent catastrophic losses
+      if(atr > 0 && InpMaxSL_ATRMult > 0)
+      {
+         double maxSLDist = atr * InpMaxSL_ATRMult;
+         if((slPrice - entryPrice) > maxSLDist)
+            slPrice = entryPrice + maxSLDist;
       }
    }
 
@@ -1212,9 +1274,19 @@ bool ExecuteTrade(int direction, string patternName)
    int    trendH1 = GetH1TrendDirection();
    int    trendM15= GetM15Direction();
    int    macdSig = GetMACDSignal();
+   int    emaCross= GetEMACrossoverDirection();
    int    adxDir  = 0;
 
    //=== FILTERS ===
+
+   // EMA crossover alignment: fast EMA must be on the right side of slow EMA
+   if(InpUseEMACrossover && slowEmaHandle != INVALID_HANDLE)
+   {
+      if(direction > 0 && emaCross < 0)
+      {  Print(patternName, " BUY skip: EMA bearish (fast < slow)"); return false; }
+      if(direction < 0 && emaCross > 0)
+      {  Print(patternName, " SELL skip: EMA bullish (fast > slow)"); return false; }
+   }
 
    // H1 Trend filter: don't trade against the trend
    if(direction > 0 && trendH1 < 0)
