@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                              ThreeCandlePattern_EA_v4.mq5        |
-//|       Three-Candle Pattern EA — Version 4.1 (Backtest Optimized) |
+//|       Three-Candle Pattern EA — Version 4.2 (Deep Optimized)    |
 //|                                                                  |
 //|  KEY CHANGES from v3:                                            |
 //|  1. Dynamic position sizing (risk % of equity per trade)         |
@@ -18,7 +18,7 @@
 //| 13. Optimized for ETO broker and backtesting                     |
 //+------------------------------------------------------------------+
 #property copyright "Three Candle Pattern EA v4 — Pro"
-#property version   "4.10"
+#property version   "4.20"
 #property strict
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
@@ -32,7 +32,7 @@ input double   InpMaxDailyDrawdownPct = 3.0;     // Max Daily Drawdown (% of Bal
 input double   InpMaxTotalDrawdownPct = 10.0;    // Max Total Drawdown (% of Balance) — 0 = off
 input int      InpMaxPositions        = 1;       // Max Open Positions — 0 = unlimited
 input int      InpMaxDailyLosses      = 5;       // Max Daily Losses — 0 = unlimited
-input int      InpCooldownBars        = 5;       // Cooldown Bars After Loss — 0 = off
+input int      InpCooldownBars        = 8;       // Cooldown Bars After Loss — 0 = off
 
 input group "=== Trading Sessions ==="
 input bool     InpUseLondonSession    = true;    // Trade London Session (07:00-11:00 UTC)
@@ -76,10 +76,10 @@ input bool     InpUseMACDFilter       = true;    // Use MACD Momentum Confirmati
 input int      InpADXPeriod           = 14;      // ADX Period — 0 = off
 input bool     InpUseADXFilter        = true;    // Use ADX Trend Strength Filter
 input double   InpADXMinTrend         = 20.0;    // ADX Min Value for Trend Confirmation
-input double   InpADXMaxChop          = 50.0;    // ADX Max Value (avoid overextended)
+input double   InpADXMaxChop          = 40.0;    // ADX Max Value (avoid overextended trends)
 
 input group "=== Volume Filter ==="
-input bool     InpUseVolumeFilter     = true;    // Use Volume Spike Filter
+input bool     InpUseVolumeFilter     = false;   // Use Volume Spike Filter (tick vol unreliable on CFD)
 input double   InpVolumeMultiplier    = 1.2;     // Volume Must Be > Avg x This Multiplier
 input int      InpVolumePeriod        = 20;      // Volume Average Period
 
@@ -90,18 +90,18 @@ input group "=== Stop Loss ==="
 input int      InpSLBufferTicks       = 5;       // SL Buffer (Ticks beyond swing/candle)
 input double   InpMinSL_ATRMult       = 1.0;     // Min SL = ATR x Mult — 0 = off
 input int      InpMinSLPoints         = 50;      // Minimum SL Distance (Points) — safety net
-input double   InpMaxSL_ATRMult       = 2.5;     // Max SL = ATR x Mult — caps catastrophic losses
+input double   InpMaxSL_ATRMult       = 2.0;     // Max SL = ATR x Mult — caps catastrophic losses
 input int      InpSwingLookback       = 7;       // Swing High/Low Lookback Bars for SL
 input bool     InpUseSwingSL          = true;    // Use Swing-Based SL (vs candle-based)
 
 input group "=== Take Profit ==="
-input double   InpTPMultiplier        = 2.5;     // TP Multiplier (x SL distance)
+input double   InpTPMultiplier        = 2.0;     // TP Multiplier (x SL distance)
 input int      InpFixedTPTicks        = 0;       // Fixed TP (Ticks) — 0 = use multiplier
 
 input group "=== Partial Close ==="
 input bool     InpUsePartialClose     = true;    // Enable Partial Close
 input double   InpPartialClosePercent = 50.0;    // % of Position to Close
-input double   InpPartialCloseRR      = 1.5;     // Close Partial at R:R (e.g. 1.5 = 1:1.5)
+input double   InpPartialCloseRR      = 1.0;     // Close Partial at R:R (e.g. 1.0 = 1:1)
 
 input group "=== Break-Even ==="
 input bool     InpUseBreakEven        = true;    // Enable Break-Even (after partial close)
@@ -495,6 +495,25 @@ int GetEMACrossoverDirection()
 }
 
 //+------------------------------------------------------------------+
+//| Check EMA slope (momentum direction)                             |
+//| Returns +1 if fast EMA rising, -1 if falling, 0 if flat          |
+//+------------------------------------------------------------------+
+int GetEMASlopeDirection()
+{
+   double fastBuf[];
+   ArraySetAsSeries(fastBuf, true);
+   if(CopyBuffer(fastEmaHandle, 0, 0, 4, fastBuf) < 4) return 0;
+   // Compare current EMA vs 2 bars ago for smoother slope
+   double slope = fastBuf[1] - fastBuf[3];
+   double atr = GetATR();
+   if(atr <= 0) return 0;
+   // Slope must be at least 10% of ATR to be meaningful
+   if(slope > atr * 0.1) return +1;  // rising
+   if(slope < -atr * 0.1) return -1; // falling
+   return 0; // flat
+}
+
+//+------------------------------------------------------------------+
 //| Get RSI value at bar index 1                                     |
 //+------------------------------------------------------------------+
 double GetRSI()
@@ -717,6 +736,21 @@ int DetectThreeCandlePattern(double fastEma)
 
    if(open1 == 0 || open2 == 0 || open3 == 0) return 0;
 
+   // Get slow EMA for stronger confirmation
+   double slowEma = fastEma; // fallback
+   if(slowEmaHandle != INVALID_HANDLE)
+   {
+      double buf[];
+      ArraySetAsSeries(buf, true);
+      if(CopyBuffer(slowEmaHandle, 0, 0, 3, buf) >= 3)
+         slowEma = buf[1];
+   }
+
+   // Reversal candle must have strong body relative to range
+   double body1 = MathAbs(close1 - open1);
+   double range1 = high1 - low1;
+   if(range1 <= 0 || body1 / range1 < 0.5) return 0; // stricter quality for 3CP
+
    // BUY: 2 bearish + 1 bullish
    bool c3Bear = (close3 < open3);
    bool c2Bear = (close2 < open2);
@@ -725,7 +759,8 @@ int DetectThreeCandlePattern(double fastEma)
    if(c3Bear && c2Bear && c1Bull)
    {
       double highPrev = MathMax(high3, high2);
-      if(close1 > highPrev && close1 > fastEma)
+      // Must close above previous highs AND above BOTH EMAs
+      if(close1 > highPrev && close1 > fastEma && close1 > slowEma)
       {
          if(IsCandleQualityOK(open1, close1, high1, low1))
             return +1; // BUY signal
@@ -740,7 +775,8 @@ int DetectThreeCandlePattern(double fastEma)
    if(c3Bull && c2Bull && c1Bear)
    {
       double lowPrev = MathMin(low3, low2);
-      if(close1 < lowPrev && close1 < fastEma)
+      // Must close below previous lows AND below BOTH EMAs
+      if(close1 < lowPrev && close1 < fastEma && close1 < slowEma)
       {
          if(IsCandleQualityOK(open1, close1, high1, low1))
             return -1; // SELL signal
@@ -818,21 +854,35 @@ int DetectPinBarPattern(double fastEma)
    double range      = high1 - low1;
    double upperWick  = high1 - MathMax(open1, close1);
    double lowerWick  = MathMin(open1, close1) - low1;
+   double atr        = GetATR();
 
-   if(body <= 0 || range <= 0) return 0;
+   if(body <= 0 || range <= 0 || atr <= 0) return 0;
 
-   // Bullish Pin Bar (Hammer): long lower wick
+   // Pin bar range should be significant (at least 0.5x ATR)
+   if(range < atr * 0.5) return 0;
+
+   // Bullish Pin Bar (Hammer): long lower wick near support
    if(lowerWick >= body * InpPinBarWickRatio && upperWick < body)
    {
-      if(close1 > fastEma || MathAbs(close1 - fastEma) / GetPipValue() < 5)
-         return +1;
+      // Pin bar low should be near recent swing low (within 1x ATR)
+      double swingLow = FindSwingLow(InpSwingLookback);
+      if(swingLow > 0 && MathAbs(low1 - swingLow) < atr * 1.0)
+      {
+         if(close1 > fastEma || MathAbs(close1 - fastEma) / GetPipValue() < 3)
+            return +1;
+      }
    }
 
-   // Bearish Pin Bar (Shooting Star): long upper wick
+   // Bearish Pin Bar (Shooting Star): long upper wick near resistance
    if(upperWick >= body * InpPinBarWickRatio && lowerWick < body)
    {
-      if(close1 < fastEma || MathAbs(close1 - fastEma) / GetPipValue() < 5)
-         return -1;
+      // Pin bar high should be near recent swing high (within 1x ATR)
+      double swingHigh = FindSwingHigh(InpSwingLookback);
+      if(swingHigh > 0 && MathAbs(high1 - swingHigh) < atr * 1.0)
+      {
+         if(close1 < fastEma || MathAbs(close1 - fastEma) / GetPipValue() < 3)
+            return -1;
+      }
    }
 
    return 0;
@@ -1275,6 +1325,7 @@ bool ExecuteTrade(int direction, string patternName)
    int    trendM15= GetM15Direction();
    int    macdSig = GetMACDSignal();
    int    emaCross= GetEMACrossoverDirection();
+   int    emaSlope= GetEMASlopeDirection();
    int    adxDir  = 0;
 
    //=== FILTERS ===
@@ -1286,6 +1337,15 @@ bool ExecuteTrade(int direction, string patternName)
       {  Print(patternName, " BUY skip: EMA bearish (fast < slow)"); return false; }
       if(direction < 0 && emaCross > 0)
       {  Print(patternName, " SELL skip: EMA bullish (fast > slow)"); return false; }
+   }
+
+   // EMA slope confirmation: EMA must be moving in trade direction
+   if(emaSlope != 0)
+   {
+      if(direction > 0 && emaSlope < 0)
+      {  Print(patternName, " BUY skip: EMA slope falling"); return false; }
+      if(direction < 0 && emaSlope > 0)
+      {  Print(patternName, " SELL skip: EMA slope rising"); return false; }
    }
 
    // H1 Trend filter: don't trade against the trend
