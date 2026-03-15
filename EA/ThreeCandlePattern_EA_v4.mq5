@@ -1,24 +1,18 @@
 //+------------------------------------------------------------------+
 //|                              ThreeCandlePattern_EA_v4.mq5        |
-//|       Three-Candle Pattern EA — Version 4.3 (Profit Optimized)  |
+//|       Three-Candle Pattern EA — Version 4.4 (Filter Reduced)   |
 //|                                                                  |
-//|  KEY CHANGES from v3:                                            |
-//|  1. Dynamic position sizing (risk % of equity per trade)         |
-//|  2. Multi-timeframe confluence (M5 entry + M15 structure + H1)   |
-//|  3. Enhanced patterns: Engulfing + Pin Bar + 3-Candle            |
-//|  4. MACD histogram for momentum confirmation                    |
-//|  5. ADX filter for trend strength                                |
-//|  6. Volume spike confirmation on entry candle                    |
-//|  7. Session-aware trading (London/NY/Asian)                      |
-//|  8. Smart SL: swing structure-based with ATR floor               |
-//|  9. Equity drawdown protection (daily & total)                   |
-//| 10. Auto-detect broker filling mode (FOK/IOC/Return)             |
-//| 11. Structure-based trailing stop                                |
-//| 12. Better candle quality: body/range ratio filter               |
-//| 13. Optimized for ETO broker and backtesting                     |
+//|  KEY CHANGES v4.4 from v4.3:                                     |
+//|  1. Disable 3CP & PINBAR (low WR), focus on ENGULF (best WR)    |
+//|  2. Re-enable Volume Filter (filters low-quality entries)        |
+//|  3. Increase TP Multiplier 2.0 -> 2.5 for better R:R            |
+//|  4. Disable Partial Close to preserve full R:R potential         |
+//|  5. Disable MACD filter (causes late entries)                    |
+//|  6. Disable EMA Slope filter (too restrictive)                   |
+//|  7. ADXMaxChop 40 -> 50 (less restrictive)                      |
 //+------------------------------------------------------------------+
 #property copyright "Three Candle Pattern EA v4 — Pro"
-#property version   "4.30"
+#property version   "4.40"
 #property strict
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
@@ -46,9 +40,9 @@ input bool     InpCloseEndOfDay       = false;   // Close All Positions at End o
 input int      InpEODHour             = 20;      // End of Day Hour (Server Time)
 
 input group "=== Entry Patterns ==="
-input bool     InpUseThreeCandle      = true;    // Use Three-Candle Reversal Pattern
-input bool     InpUseEngulfing        = true;    // Use Engulfing Pattern
-input bool     InpUsePinBar           = false;   // Use Pin Bar Pattern (disabled: 28% WR in backtest)
+input bool     InpUseThreeCandle      = false;   // Use Three-Candle Reversal Pattern (disabled: low WR)
+input bool     InpUseEngulfing        = true;    // Use Engulfing Pattern (best WR ~41%)
+input bool     InpUsePinBar           = false;   // Use Pin Bar Pattern (disabled: 22-35% WR)
 input double   InpPinBarWickRatio     = 2.0;     // Pin Bar: Min Wick/Body Ratio
 input double   InpMinCandleBodyPips   = 0.0;     // Min Entry Candle Body (Pips) — 0 = off
 input double   InpMinBodyRangeRatio   = 0.4;     // Min Body/Range Ratio (candle quality)
@@ -72,14 +66,14 @@ input double   InpRSIOversold         = 30.0;    // RSI Oversold Level (skip Sel
 input int      InpMACDFast            = 12;      // MACD Fast Period — 0 = off
 input int      InpMACDSlow            = 26;      // MACD Slow Period
 input int      InpMACDSignal          = 9;       // MACD Signal Period
-input bool     InpUseMACDFilter       = true;    // Use MACD Momentum Confirmation
+input bool     InpUseMACDFilter       = false;   // Use MACD Momentum Confirmation (disabled: causes late entries)
 input int      InpADXPeriod           = 14;      // ADX Period — 0 = off
 input bool     InpUseADXFilter        = true;    // Use ADX Trend Strength Filter
 input double   InpADXMinTrend         = 20.0;    // ADX Min Value for Trend Confirmation
-input double   InpADXMaxChop          = 40.0;    // ADX Max Value (avoid overextended trends)
+input double   InpADXMaxChop          = 50.0;    // ADX Max Value (avoid overextended trends)
 
 input group "=== Volume Filter ==="
-input bool     InpUseVolumeFilter     = false;   // Use Volume Spike Filter (tick vol unreliable on CFD)
+input bool     InpUseVolumeFilter     = true;    // Use Volume Spike Filter (filters low-quality entries)
 input double   InpVolumeMultiplier    = 1.2;     // Volume Must Be > Avg x This Multiplier
 input int      InpVolumePeriod        = 20;      // Volume Average Period
 
@@ -95,12 +89,12 @@ input int      InpSwingLookback       = 7;       // Swing High/Low Lookback Bars
 input bool     InpUseSwingSL          = true;    // Use Swing-Based SL (vs candle-based)
 
 input group "=== Take Profit ==="
-input double   InpTPMultiplier        = 2.0;     // TP Multiplier (x SL distance)
+input double   InpTPMultiplier        = 2.5;     // TP Multiplier (x SL distance) — increased for better R:R
 input int      InpFixedTPTicks        = 0;       // Fixed TP (Ticks) — 0 = use multiplier
 input double   InpMinRRRatio          = 1.5;     // Min R:R Ratio to Enter (0 = off)
 
 input group "=== Partial Close ==="
-input bool     InpUsePartialClose     = true;    // Enable Partial Close
+input bool     InpUsePartialClose     = false;   // Enable Partial Close (disabled: preserves full R:R)
 input double   InpPartialClosePercent = 50.0;    // % of Position to Close
 input double   InpPartialCloseRR      = 1.0;     // Close Partial at R:R (e.g. 1.0 = 1:1)
 
@@ -1353,14 +1347,14 @@ bool ExecuteTrade(int direction, string patternName)
       {  Print(patternName, " SELL skip: EMA bullish (fast > slow)"); return false; }
    }
 
-   // EMA slope confirmation: EMA must be moving in trade direction
-   if(emaSlope != 0)
-   {
-      if(direction > 0 && emaSlope < 0)
-      {  Print(patternName, " BUY skip: EMA slope falling"); return false; }
-      if(direction < 0 && emaSlope > 0)
-      {  Print(patternName, " SELL skip: EMA slope rising"); return false; }
-   }
+   // EMA slope confirmation — DISABLED in v4.4 (too restrictive, causes late entries)
+   // if(emaSlope != 0)
+   // {
+   //    if(direction > 0 && emaSlope < 0)
+   //    {  Print(patternName, " BUY skip: EMA slope falling"); return false; }
+   //    if(direction < 0 && emaSlope > 0)
+   //    {  Print(patternName, " SELL skip: EMA slope rising"); return false; }
+   // }
 
    // H1 Trend filter: don't trade against the trend
    if(direction > 0 && trendH1 < 0)
@@ -1522,7 +1516,7 @@ void OnTick()
    double fastEma, slowEma;
    if(!GetEMAValues(fastEma, slowEma)) return;
 
-   //--- Detect patterns (priority: Three-Candle > Engulfing > Pin Bar)
+   //--- Detect patterns (v4.4: Engulfing only by default)
    int signal = 0;
    string patternName = "";
 
