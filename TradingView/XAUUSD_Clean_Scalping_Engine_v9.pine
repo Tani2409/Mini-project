@@ -56,6 +56,7 @@ showBG      = input.bool(true, "Show Trend Background",   group=grpVisual)
 showLiq     = input.bool(true, "Show Liquidity R/S",    group=grpVisual)
 showDash    = input.bool(true, "Show Dashboard",          group=grpVisual)
 showPredict = input.bool(true, "Show Prediction", group=grpVisual)
+showScanner = input.bool(true, "Show Signal Scanner (Dieu kien vao lenh)", group=grpVisual, tooltip="Hien bang trang thai cac dieu kien BUY/SELL, giup biet he thong dang xem xet vao lenh")
 
 // ===== INDICATORS =====
 emaFast  = ta.ema(close, emaFastLen)
@@ -647,6 +648,87 @@ if showDash and barstate.islast
     zoneText = showZones ? "7 VUNG ON" : "TAT"
     table.cell(dash, 0, 9, "ZONES", text_color=color.new(color.white, 30), text_size=size.small, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_center)
     table.cell(dash, 1, 9, zoneText, text_color=color.white, text_size=size.normal, bgcolor=color.new(#42A5F5, 10), text_halign=text.align_center)
+
+// ===== SIGNAL SCANNER TABLE (Trang thai dieu kien vao lenh) =====
+var table scanner = table.new(position.bottom_right, 3, 12, border_width=1, border_color=color.new(color.white, 70), frame_width=1, frame_color=color.new(color.white, 70))
+
+if showScanner and barstate.islast
+    // Header
+    table.cell(scanner, 0, 0, "DIEU KIEN", text_color=color.white, text_size=size.tiny, bgcolor=color.new(#1E1E1E, 0), text_halign=text.align_center)
+    table.cell(scanner, 1, 0, "BUY", text_color=color.white, text_size=size.tiny, bgcolor=color.new(#00C853, 30), text_halign=text.align_center)
+    table.cell(scanner, 2, 0, "SELL", text_color=color.white, text_size=size.tiny, bgcolor=color.new(#FF1744, 30), text_halign=text.align_center)
+
+    // 1. Bull/Bear Percent > threshold
+    cond1Buy = bullPercent > probThresh
+    cond1Sell = bearPercent > probThresh
+    table.cell(scanner, 0, 1, "Trend Score", text_color=color.new(color.white, 30), text_size=size.tiny, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_left)
+    table.cell(scanner, 1, 1, cond1Buy ? "OK " + str.tostring(math.round(bullPercent, 1)) + "%" : "X " + str.tostring(math.round(bullPercent, 1)) + "%", text_color=color.white, text_size=size.tiny, bgcolor=cond1Buy ? color.new(#00C853, 30) : color.new(#555555, 10), text_halign=text.align_center)
+    table.cell(scanner, 2, 1, cond1Sell ? "OK " + str.tostring(math.round(bearPercent, 1)) + "%" : "X " + str.tostring(math.round(bearPercent, 1)) + "%", text_color=color.white, text_size=size.tiny, bgcolor=cond1Sell ? color.new(#FF1744, 30) : color.new(#555555, 10), text_halign=text.align_center)
+
+    // 2. EMA Fast vs Slow
+    cond2Buy = emaFast > emaSlow
+    cond2Sell = emaFast < emaSlow
+    table.cell(scanner, 0, 2, "EMA Fast/Slow", text_color=color.new(color.white, 30), text_size=size.tiny, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_left)
+    table.cell(scanner, 1, 2, cond2Buy ? "OK" : "X", text_color=color.white, text_size=size.tiny, bgcolor=cond2Buy ? color.new(#00C853, 30) : color.new(#555555, 10), text_halign=text.align_center)
+    table.cell(scanner, 2, 2, cond2Sell ? "OK" : "X", text_color=color.white, text_size=size.tiny, bgcolor=cond2Sell ? color.new(#FF1744, 30) : color.new(#555555, 10), text_halign=text.align_center)
+
+    // 3. Close vs EMA Fast
+    cond3Buy = close > emaFast
+    cond3Sell = close < emaFast
+    table.cell(scanner, 0, 3, "Gia vs EMA", text_color=color.new(color.white, 30), text_size=size.tiny, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_left)
+    table.cell(scanner, 1, 3, cond3Buy ? "OK" : "X", text_color=color.white, text_size=size.tiny, bgcolor=cond3Buy ? color.new(#00C853, 30) : color.new(#555555, 10), text_halign=text.align_center)
+    table.cell(scanner, 2, 3, cond3Sell ? "OK" : "X", text_color=color.white, text_size=size.tiny, bgcolor=cond3Sell ? color.new(#FF1744, 30) : color.new(#555555, 10), text_halign=text.align_center)
+
+    // 4. RSI
+    cond4Buy = rsi < rsiOB
+    cond4Sell = rsi > rsiOS
+    table.cell(scanner, 0, 4, "RSI (" + str.tostring(math.round(rsi, 1)) + ")", text_color=color.new(color.white, 30), text_size=size.tiny, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_left)
+    table.cell(scanner, 1, 4, cond4Buy ? "OK" : "QUA MUA", text_color=color.white, text_size=size.tiny, bgcolor=cond4Buy ? color.new(#00C853, 30) : color.new(#FF9800, 10), text_halign=text.align_center)
+    table.cell(scanner, 2, 4, cond4Sell ? "OK" : "QUA BAN", text_color=color.white, text_size=size.tiny, bgcolor=cond4Sell ? color.new(#FF1744, 30) : color.new(#FF9800, 10), text_halign=text.align_center)
+
+    // 5. ADX > 15
+    cond5 = adxVal > 15
+    table.cell(scanner, 0, 5, "ADX (" + str.tostring(math.round(adxVal, 1)) + ")", text_color=color.new(color.white, 30), text_size=size.tiny, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_left)
+    table.cell(scanner, 1, 5, cond5 ? "OK" : "CHOPPY", text_color=color.white, text_size=size.tiny, bgcolor=cond5 ? color.new(#00C853, 30) : color.new(#555555, 10), text_halign=text.align_center)
+    table.cell(scanner, 2, 5, cond5 ? "OK" : "CHOPPY", text_color=color.white, text_size=size.tiny, bgcolor=cond5 ? color.new(#FF1744, 30) : color.new(#555555, 10), text_halign=text.align_center)
+
+    // 6. HTF Filter
+    table.cell(scanner, 0, 6, "HTF H1/H4", text_color=color.new(color.white, 30), text_size=size.tiny, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_left)
+    table.cell(scanner, 1, 6, htfBull ? "OK" : "X", text_color=color.white, text_size=size.tiny, bgcolor=htfBull ? color.new(#00C853, 30) : color.new(#555555, 10), text_halign=text.align_center)
+    table.cell(scanner, 2, 6, htfBear ? "OK" : "X", text_color=color.white, text_size=size.tiny, bgcolor=htfBear ? color.new(#FF1744, 30) : color.new(#555555, 10), text_halign=text.align_center)
+
+    // 7. Pullback
+    table.cell(scanner, 0, 7, "Pullback", text_color=color.new(color.white, 30), text_size=size.tiny, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_left)
+    table.cell(scanner, 1, 7, pullbackBuyOk ? "OK" : "QUA XA", text_color=color.white, text_size=size.tiny, bgcolor=pullbackBuyOk ? color.new(#00C853, 30) : color.new(#FF9800, 10), text_halign=text.align_center)
+    table.cell(scanner, 2, 7, pullbackSellOk ? "OK" : "QUA XA", text_color=color.white, text_size=size.tiny, bgcolor=pullbackSellOk ? color.new(#FF1744, 30) : color.new(#FF9800, 10), text_halign=text.align_center)
+
+    // 8. Volume filter
+    table.cell(scanner, 0, 8, "Volume (" + str.tostring(math.round(volRatio, 1)) + "x)", text_color=color.new(color.white, 30), text_size=size.tiny, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_left)
+    table.cell(scanner, 1, 8, volOk ? "OK" : "THAP", text_color=color.white, text_size=size.tiny, bgcolor=volOk ? color.new(#00C853, 30) : color.new(#555555, 10), text_halign=text.align_center)
+    table.cell(scanner, 2, 8, volOk ? "OK" : "THAP", text_color=color.white, text_size=size.tiny, bgcolor=volOk ? color.new(#FF1744, 30) : color.new(#555555, 10), text_halign=text.align_center)
+
+    // 9. Stochastic filter
+    table.cell(scanner, 0, 9, "Stoch (" + str.tostring(math.round(stochK, 1)) + ")", text_color=color.new(color.white, 30), text_size=size.tiny, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_left)
+    table.cell(scanner, 1, 9, stochBuyOk ? "OK" : "QUA MUA", text_color=color.white, text_size=size.tiny, bgcolor=stochBuyOk ? color.new(#00C853, 30) : color.new(#FF9800, 10), text_halign=text.align_center)
+    table.cell(scanner, 2, 9, stochSellOk ? "OK" : "QUA BAN", text_color=color.white, text_size=size.tiny, bgcolor=stochSellOk ? color.new(#FF1744, 30) : color.new(#FF9800, 10), text_halign=text.align_center)
+
+    // Count conditions met
+    buyCount  = (cond1Buy ? 1 : 0) + (cond2Buy ? 1 : 0) + (cond3Buy ? 1 : 0) + (cond4Buy ? 1 : 0) + (cond5 ? 1 : 0) + (htfBull ? 1 : 0) + (pullbackBuyOk ? 1 : 0) + (volOk ? 1 : 0) + (stochBuyOk ? 1 : 0)
+    sellCount = (cond1Sell ? 1 : 0) + (cond2Sell ? 1 : 0) + (cond3Sell ? 1 : 0) + (cond4Sell ? 1 : 0) + (cond5 ? 1 : 0) + (htfBear ? 1 : 0) + (pullbackSellOk ? 1 : 0) + (volOk ? 1 : 0) + (stochSellOk ? 1 : 0)
+
+    // Summary row
+    buyReadyColor  = buyCount == 9 ? color.new(#00C853, 10) : buyCount >= 7 ? color.new(#FFC107, 10) : color.new(#555555, 10)
+    sellReadyColor = sellCount == 9 ? color.new(#FF1744, 10) : sellCount >= 7 ? color.new(#FFC107, 10) : color.new(#555555, 10)
+    table.cell(scanner, 0, 10, "TONG", text_color=color.white, text_size=size.tiny, bgcolor=color.new(#1E1E1E, 0), text_halign=text.align_center)
+    table.cell(scanner, 1, 10, str.tostring(buyCount) + "/9", text_color=color.white, text_size=size.tiny, bgcolor=buyReadyColor, text_halign=text.align_center)
+    table.cell(scanner, 2, 10, str.tostring(sellCount) + "/9", text_color=color.white, text_size=size.tiny, bgcolor=sellReadyColor, text_halign=text.align_center)
+
+    // Status row
+    scanStatus = buyCount == 9 ? "SAN SANG BUY!" : sellCount == 9 ? "SAN SANG SELL!" : buyCount >= 7 ? "GAN BUY (" + str.tostring(buyCount) + "/9)" : sellCount >= 7 ? "GAN SELL (" + str.tostring(sellCount) + "/9)" : "DANG QUET..."
+    scanColor  = buyCount == 9 ? color.new(#00C853, 10) : sellCount == 9 ? color.new(#FF1744, 10) : buyCount >= 7 or sellCount >= 7 ? color.new(#FFC107, 10) : color.new(#42A5F5, 10)
+    table.cell(scanner, 0, 11, "TRANG THAI", text_color=color.white, text_size=size.tiny, bgcolor=color.new(#1E1E1E, 0), text_halign=text.align_center)
+    table.cell(scanner, 1, 11, scanStatus, text_color=color.white, text_size=size.tiny, bgcolor=scanColor, text_halign=text.align_center)
+    table.merge_cells(scanner, 1, 11, 2, 11)
 
 // ===== ALERTS =====
 if tpHit1 and not tpHit1[1]
