@@ -426,9 +426,6 @@ if buyFiltered and not blockNewSignal
         tp3Lbl    := label.new(bar_index + 31, activeTP3, "TP3 " + str.tostring(math.round(activeTP3, 2)), style=label.style_label_left, color=#00E676, textcolor=color.white, size=size.tiny)
         slLbl     := label.new(bar_index + 31, activeSL, "SL SAFE " + str.tostring(math.round(activeSL, 2)), style=label.style_label_left, color=#FF1744, textcolor=color.white, size=size.tiny)
 
-    // Alert BUY signal (TradingView built-in email)
-    buyAlertMsg = "BUY XAUUSD" + "\nEntry: " + str.tostring(math.round(close, 2)) + "\nTP1: " + str.tostring(math.round(activeTP1, 2)) + " (R:R " + str.tostring(math.round(buyRR1, 1)) + ")" + "\nTP2: " + str.tostring(math.round(activeTP2, 2)) + " (R:R " + str.tostring(math.round(buyRR2, 1)) + ")" + "\nTP3: " + str.tostring(math.round(activeTP3, 2)) + " (R:R " + str.tostring(math.round(buyRR3, 1)) + ")" + "\nSL: " + str.tostring(math.round(activeSL, 2)) + "\nRisk: " + str.tostring(math.round(close - activeSL, 2)) + " | ATR: " + str.tostring(math.round(atr, 2)) + "\nVol: " + str.tostring(math.round(volRatio, 1)) + "x | ADX: " + str.tostring(math.round(adxVal, 1)) + "\nBull: " + str.tostring(math.round(bullSmooth, 1)) + "% | Score: " + str.tostring(momStars) + "/5"
-    alert(buyAlertMsg, alert.freq_once_per_bar)
 
 if sellFiltered and not blockNewSignal
     line.delete(tp1Line), line.delete(tp2Line), line.delete(tp3Line), line.delete(slLine), line.delete(entryLine)
@@ -468,9 +465,6 @@ if sellFiltered and not blockNewSignal
         tp3Lbl    := label.new(bar_index + 31, activeTP3, "TP3 " + str.tostring(math.round(activeTP3, 2)), style=label.style_label_left, color=#00E676, textcolor=color.white, size=size.tiny)
         slLbl     := label.new(bar_index + 31, activeSL, "SL SAFE " + str.tostring(math.round(activeSL, 2)), style=label.style_label_left, color=#FF1744, textcolor=color.white, size=size.tiny)
 
-    // Alert SELL signal (TradingView built-in email)
-    sellAlertMsg = "SELL XAUUSD" + "\nEntry: " + str.tostring(math.round(close, 2)) + "\nTP1: " + str.tostring(math.round(activeTP1, 2)) + " (R:R " + str.tostring(math.round(sellRR1, 1)) + ")" + "\nTP2: " + str.tostring(math.round(activeTP2, 2)) + " (R:R " + str.tostring(math.round(sellRR2, 1)) + ")" + "\nTP3: " + str.tostring(math.round(activeTP3, 2)) + " (R:R " + str.tostring(math.round(sellRR3, 1)) + ")" + "\nSL: " + str.tostring(math.round(activeSL, 2)) + "\nRisk: " + str.tostring(math.round(activeSL - close, 2)) + " | ATR: " + str.tostring(math.round(atr, 2)) + "\nVol: " + str.tostring(math.round(volRatio, 1)) + "x | ADX: " + str.tostring(math.round(adxVal, 1)) + "\nBear: " + str.tostring(math.round(bearSmooth, 1)) + "% | Score: " + str.tostring(momStars) + "/5"
-    alert(sellAlertMsg, alert.freq_once_per_bar)
 
 // ===== TP/SL HIT DETECTION (MULTI-LEVEL) =====
 if activeDir == 1 and not slHit
@@ -667,7 +661,3 @@ if tpHit3 and not tpHit3[1]
 // Alert khi nhảy giá mạnh mà có lệnh đang active
 if strongJump and activeDir != 0
     alert("NHAY GIA MANH | Giu nguyen TP/SL de theo doi winrate. Dir=" + (activeDir == 1 ? "BUY" : "SELL"), alert.freq_once_per_bar)
-
-// ===== ALERT CONDITIONS (cho TradingView built-in email notification) =====
-alertcondition(buyFiltered and not blockNewSignal, title="BUY Signal", message="XAUUSD BUY Signal detected")
-alertcondition(sellFiltered and not blockNewSignal, title="SELL Signal", message="XAUUSD SELL Signal detected")
