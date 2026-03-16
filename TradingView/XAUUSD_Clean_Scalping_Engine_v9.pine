@@ -323,6 +323,14 @@ momScore += (htfBull and isBullish) or (htfBear and isBearish) ? 1.0 : 0.0
 momStars = math.round(momScore)
 momText  = momStars >= 5 ? "*****" : momStars >= 4 ? "****" : momStars >= 3 ? "***" : momStars >= 2 ? "**" : "*"
 
+// ===== ADAPTIVE TP/SL BASE CALCULATIONS =====
+recentSwingLow  = ta.lowest(low, 15)
+recentSwingHigh = ta.highest(high, 15)
+
+avgBody5    = ta.sma(math.abs(close - open), 5)
+avgRange5   = ta.sma(high - low, 5)
+scalpBase   = math.max(atr, (avgBody5 + avgRange5) / 2, 0.5)
+
 // ===== R:R RATIO CALCULATION =====
 // Tính Risk:Reward ratio trước khi vào lệnh
 buyRisk    = close - math.min(close - (scalpBase * 0.8), recentSwingLow - (atr * 0.2))
@@ -342,13 +350,6 @@ buyFiltered  := buyFiltered and volOk and stochBuyOk
 sellFiltered := sellFiltered and volOk and stochSellOk
 
 // ===== ADAPTIVE TP/SL MULTI-LEVEL =====
-recentSwingLow  = ta.lowest(low, 15)
-recentSwingHigh = ta.highest(high, 15)
-
-avgBody5    = ta.sma(math.abs(close - open), 5)
-avgRange5   = ta.sma(high - low, 5)
-scalpBase   = math.max(atr, (avgBody5 + avgRange5) / 2, 0.5)
-
 var float activeTP1   = na
 var float activeTP2   = na
 var float activeTP3   = na
