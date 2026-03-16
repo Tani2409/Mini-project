@@ -1,0 +1,579 @@
+//@version=5
+indicator("XAUUSD Clean Scalping Engine v9 - Multi TP + Zones", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
+
+// ===== INPUT =====
+grpEMA    = "EMA Settings"
+emaFastLen  = input.int(9,  "Fast EMA",  group=grpEMA)
+emaSlowLen  = input.int(21, "Slow EMA",  group=grpEMA)
+emaTrendLen = input.int(50, "Trend EMA", group=grpEMA)
+
+grpHTF      = "HTF Filter (H1/H4)"
+useHTF      = input.bool(true, "Bật Lọc Trend H1 & H4", group=grpHTF, tooltip="Giúp tránh lệnh ngược trend lớn, tăng Win Rate")
+htfEmaLen   = input.int(50, "Chu kỳ EMA Khung Lớn", group=grpHTF)
+
+grpRSI    = "RSI Settings"
+rsiLen      = input.int(14, "RSI Length", group=grpRSI)
+rsiOB       = input.int(70, "RSI Overbought", group=grpRSI)
+rsiOS       = input.int(30, "RSI Oversold",   group=grpRSI)
+
+grpMACD   = "MACD Settings"
+macdFast    = input.int(12, "MACD Fast",   group=grpMACD)
+macdSlow    = input.int(26, "MACD Slow",   group=grpMACD)
+macdSignal  = input.int(9,  "MACD Signal", group=grpMACD)
+
+grpSignal   = "Signal TPs & SL"
+probThresh  = input.int(65, "Tỉ lệ Win yêu cầu %", minval=50, maxval=100, group=grpSignal)
+showTP_SL   = input.bool(true, "Show TP/SL Levels", group=grpSignal)
+atrLen      = input.int(14, "ATR Length", group=grpSignal)
+tp1Mult     = input.float(0.8, "TP1 Multiplier (An toàn cày lot)", step=0.1, group=grpSignal)
+tp2Mult     = input.float(1.5, "TP2 Multiplier", step=0.1, group=grpSignal)
+tp3Mult     = input.float(2.5, "TP3 Multiplier (Tối đa)", step=0.1, group=grpSignal)
+
+grpLiq      = "Liquidity Monitoring"
+liqCheckBars = input.int(5, "Số nến kiểm tra thanh khoản", minval=2, maxval=20, group=grpLiq, tooltip="Sau khi đặt lệnh, kiểm tra trong N nến xem giá có di chuyển đủ nhanh không")
+liqMinMove   = input.float(0.3, "Tỉ lệ ATR tối thiểu để coi là thanh khoản tốt", step=0.1, group=grpLiq, tooltip="Nếu giá di chuyển ít hơn tỉ lệ này * ATR trong N nến, cảnh báo thanh khoản kém")
+showLiqAlert = input.bool(true, "Hiện cảnh báo thanh khoản", group=grpLiq)
+
+grpZones    = "7 Zones Settings"
+showZones   = input.bool(true, "Hiện 7 Vùng (S/R/Sideways)", group=grpZones)
+zoneLookback = input.int(50, "Zone Lookback Period", minval=20, maxval=200, group=grpZones)
+zoneWidth    = input.float(0.3, "Zone Width (ATR multiplier)", step=0.1, group=grpZones)
+
+grpVisual = "Visual Settings"
+showBG      = input.bool(true, "Show Trend Background",   group=grpVisual)
+showLiq     = input.bool(true, "Show Liquidity R/S",    group=grpVisual)
+showDash    = input.bool(true, "Show Dashboard",          group=grpVisual)
+showPredict = input.bool(true, "Show Prediction", group=grpVisual)
+
+// ===== INDICATORS =====
+emaFast  = ta.ema(close, emaFastLen)
+emaSlow  = ta.ema(close, emaSlowLen)
+emaTrend = ta.ema(close, emaTrendLen)
+rsi      = ta.rsi(close, rsiLen)
+atr      = ta.atr(atrLen)
+
+// HTF indicators (H1 & H4)
+htf1_ema = request.security(syminfo.tickerid, "60", ta.ema(close, htfEmaLen))
+htf2_ema = request.security(syminfo.tickerid, "240", ta.ema(close, htfEmaLen))
+
+htfBull = not useHTF or (close > htf1_ema and close > htf2_ema)
+htfBear = not useHTF or (close < htf1_ema and close < htf2_ema)
+
+[macdLine, signalLine, histLine] = ta.macd(close, macdFast, macdSlow, macdSignal)
+[diPlus, diMinus, adxVal] = ta.dmi(14, 14)
+
+stochK = ta.stoch(close, high, low, 14)
+volSMA   = ta.sma(volume, 20)
+volRatio = nz(volSMA) > 0 ? volume / volSMA : 1.0
+
+// ===== GRADIENT TREND SCORE =====
+bull = 0.0
+bear = 0.0
+
+bull += math.max(0, math.min(1.5, ((close - emaTrend) / atr) * 0.75))
+bear += math.max(0, math.min(1.5, -((close - emaTrend) / atr) * 0.75))
+
+bull += math.max(0, math.min(1.5, ((emaFast - emaSlow) / atr) * 1.0))
+bear += math.max(0, math.min(1.5, -((emaFast - emaSlow) / atr) * 1.0))
+
+bull += (emaFast > emaSlow and emaSlow > emaTrend) ? 1.0 : (emaFast > emaSlow ? 0.5 : 0)
+bear += (emaFast < emaSlow and emaSlow < emaTrend) ? 1.0 : (emaFast < emaSlow ? 0.5 : 0)
+
+bull += math.max(0, math.min(1.5, ((rsi - 50) / 50) * 1.5))
+bear += math.max(0, math.min(1.5, -((rsi - 50) / 50) * 1.5))
+
+bull += math.max(0, math.min(1.0, histLine / atr * 10))
+bear += math.max(0, math.min(1.0, -histLine / atr * 10))
+
+bull += math.max(0, math.min(1.0, (diPlus - diMinus) / 50 * 2))
+bear += math.max(0, math.min(1.0, -(diPlus - diMinus) / 50 * 2))
+
+bull += adxVal > 15 and bull > bear ? (adxVal - 15) / 50 : 0
+bear += adxVal > 15 and bear > bull ? (adxVal - 15) / 50 : 0
+
+bull += htfBull ? 2.0 : 0.0
+bear += htfBear ? 2.0 : 0.0
+
+totalScore = bull + bear
+bullPercent = totalScore > 0 ? bull / totalScore * 100 : 50
+bearPercent = totalScore > 0 ? bear / totalScore * 100 : 50
+
+bullSmooth = ta.ema(bullPercent, 3)
+bearSmooth = ta.ema(bearPercent, 3)
+
+isBullish = bullSmooth > probThresh and htfBull
+isBearish = bearSmooth > probThresh and htfBear
+
+// ===== TREND BACKGROUND =====
+bgTrans = isBullish ? math.round(100 - (bullSmooth - 50) * 1.6) : isBearish ? math.round(100 - (bearSmooth - 50) * 1.6) : 97
+bgTrans := math.max(75, math.min(97, bgTrans))
+bgColor = showBG ? (isBullish ? color.new(#00C853, bgTrans) : isBearish ? color.new(#FF1744, bgTrans) : color.new(color.gray, 97)) : na
+bgcolor(bgColor, title="Trend Background")
+
+// ===== EMA PLOTS =====
+fastColor = emaFast > emaSlow ? #00E676 : #FF5252
+plot(emaFast,  "Fast EMA",  color=fastColor, linewidth=2)
+plot(emaSlow,  "Slow EMA",  color=#42A5F5,   linewidth=2)
+plot(emaTrend, "Trend EMA", color=#FFFFFF,    linewidth=3)
+
+p1 = plot(emaFast, display=display.none)
+p2 = plot(emaSlow, display=display.none)
+fill(p1, p2, color=emaFast > emaSlow ? color.new(#00E676, 85) : color.new(#FF5252, 85), title="EMA Ribbon")
+
+// ===== LIQUIDITY ZONES (Original) =====
+swingHigh = ta.pivothigh(high, 8, 8)
+swingLow  = ta.pivotlow(low, 8, 8)
+var float lastHigh = na
+var float lastLow  = na
+if swingHigh
+    lastHigh := high[8]
+if swingLow
+    lastLow := low[8]
+
+plot(showLiq ? lastHigh : na, "Resistance", color=color.new(#FF5252, 20), linewidth=2, style=plot.style_linebr)
+plot(showLiq ? lastLow  : na, "Support",   color=color.new(#00E676, 20), linewidth=2, style=plot.style_linebr)
+
+// ===== 7 ZONES: 3 SUPPORT + 1 SIDEWAYS + 3 RESISTANCE =====
+// Tính toán các vùng dựa trên pivot points ở nhiều chu kỳ khác nhau
+zoneATR = ta.atr(atrLen)
+halfZone = zoneATR * zoneWidth
+
+// Support zones - dùng pivot lows ở các lookback khác nhau
+pivotLow1  = ta.pivotlow(low, math.round(zoneLookback * 0.4), math.round(zoneLookback * 0.4))
+pivotLow2  = ta.pivotlow(low, math.round(zoneLookback * 0.7), math.round(zoneLookback * 0.7))
+pivotLow3  = ta.pivotlow(low, zoneLookback, zoneLookback)
+
+// Resistance zones - dùng pivot highs ở các lookback khác nhau
+pivotHigh1 = ta.pivothigh(high, math.round(zoneLookback * 0.4), math.round(zoneLookback * 0.4))
+pivotHigh2 = ta.pivothigh(high, math.round(zoneLookback * 0.7), math.round(zoneLookback * 0.7))
+pivotHigh3 = ta.pivothigh(high, zoneLookback, zoneLookback)
+
+// Lưu giá trị các vùng
+var float support1 = na
+var float support2 = na
+var float support3 = na
+var float resist1  = na
+var float resist2  = na
+var float resist3  = na
+
+lb1 = math.round(zoneLookback * 0.4)
+lb2 = math.round(zoneLookback * 0.7)
+lb3 = zoneLookback
+
+if not na(pivotLow1)
+    support1 := low[lb1]
+if not na(pivotLow2)
+    support2 := low[lb2]
+if not na(pivotLow3)
+    support3 := low[lb3]
+
+if not na(pivotHigh1)
+    resist1 := high[lb1]
+if not na(pivotHigh2)
+    resist2 := high[lb2]
+if not na(pivotHigh3)
+    resist3 := high[lb3]
+
+// Sắp xếp support: gần giá nhất -> xa giá nhất (giảm dần)
+s1 = not na(support1) ? support1 : na
+s2 = not na(support2) ? support2 : (not na(support1) ? support1 - zoneATR : na)
+s3 = not na(support3) ? support3 : (not na(support2) ? support2 - zoneATR : (not na(support1) ? support1 - zoneATR * 2 : na))
+
+// Sắp xếp resistance: gần giá nhất -> xa giá nhất (tăng dần)
+r1 = not na(resist1) ? resist1 : na
+r2 = not na(resist2) ? resist2 : (not na(resist1) ? resist1 + zoneATR : na)
+r3 = not na(resist3) ? resist3 : (not na(resist2) ? resist2 + zoneATR : (not na(resist1) ? resist1 + zoneATR * 2 : na))
+
+// Sideways zone = khoảng giữa support1 gần nhất và resist1 gần nhất
+swMid = (not na(s1) and not na(r1)) ? (s1 + r1) / 2 : close
+swHalf = (not na(s1) and not na(r1)) ? (r1 - s1) / 2 : zoneATR * 0.5
+
+// Vẽ các vùng bằng box (chỉ trên thanh cuối)
+var box swBox  = na
+var box s1Box  = na
+var box s2Box  = na
+var box s3Box  = na
+var box r1Box  = na
+var box r2Box  = na
+var box r3Box  = na
+
+var label swLbl  = na
+var label s1Lbl2 = na
+var label s2Lbl2 = na
+var label s3Lbl2 = na
+var label r1Lbl2 = na
+var label r2Lbl2 = na
+var label r3Lbl2 = na
+
+if showZones and barstate.islast
+    // Xóa box cũ
+    box.delete(swBox)
+    box.delete(s1Box)
+    box.delete(s2Box)
+    box.delete(s3Box)
+    box.delete(r1Box)
+    box.delete(r2Box)
+    box.delete(r3Box)
+    label.delete(swLbl)
+    label.delete(s1Lbl2)
+    label.delete(s2Lbl2)
+    label.delete(s3Lbl2)
+    label.delete(r1Lbl2)
+    label.delete(r2Lbl2)
+    label.delete(r3Lbl2)
+
+    zoneLeft  = bar_index - 60
+    zoneRight = bar_index + 20
+
+    // SIDEWAYS zone - màu trắng nhạt
+    if not na(s1) and not na(r1)
+        swBox := box.new(zoneLeft, r1, zoneRight, s1, border_color=color.new(color.white, 70), bgcolor=color.new(color.white, 88), border_width=1, border_style=line.style_dotted)
+        swLbl := label.new(zoneRight, swMid, "SIDEWAYS", style=label.style_label_left, color=color.new(color.white, 60), textcolor=color.new(color.white, 20), size=size.tiny)
+
+    // SUPPORT 1 - xanh biển đậm nhất (gần giá nhất)
+    if not na(s1)
+        s1Top = s1
+        s1Bot = s1 - halfZone
+        s1Box := box.new(zoneLeft, s1Top, zoneRight, s1Bot, border_color=color.new(#2196F3, 30), bgcolor=color.new(#2196F3, 75), border_width=1)
+        s1Lbl2 := label.new(zoneRight, (s1Top + s1Bot) / 2, "S1", style=label.style_label_left, color=color.new(#2196F3, 30), textcolor=color.white, size=size.tiny)
+
+    // SUPPORT 2 - xanh biển trung bình
+    if not na(s2)
+        s2Top = s2
+        s2Bot = s2 - halfZone
+        s2Box := box.new(zoneLeft, s2Top, zoneRight, s2Bot, border_color=color.new(#2196F3, 50), bgcolor=color.new(#2196F3, 83), border_width=1)
+        s2Lbl2 := label.new(zoneRight, (s2Top + s2Bot) / 2, "S2", style=label.style_label_left, color=color.new(#2196F3, 50), textcolor=color.white, size=size.tiny)
+
+    // SUPPORT 3 - xanh biển nhạt nhất (xa giá nhất)
+    if not na(s3)
+        s3Top = s3
+        s3Bot = s3 - halfZone
+        s3Box := box.new(zoneLeft, s3Top, zoneRight, s3Bot, border_color=color.new(#2196F3, 70), bgcolor=color.new(#2196F3, 90), border_width=1)
+        s3Lbl2 := label.new(zoneRight, (s3Top + s3Bot) / 2, "S3", style=label.style_label_left, color=color.new(#2196F3, 70), textcolor=color.white, size=size.tiny)
+
+    // RESISTANCE 1 - hồng đậm nhất (gần giá nhất)
+    if not na(r1)
+        r1Bot = r1
+        r1Top = r1 + halfZone
+        r1Box := box.new(zoneLeft, r1Top, zoneRight, r1Bot, border_color=color.new(#E91E63, 30), bgcolor=color.new(#E91E63, 75), border_width=1)
+        r1Lbl2 := label.new(zoneRight, (r1Top + r1Bot) / 2, "R1", style=label.style_label_left, color=color.new(#E91E63, 30), textcolor=color.white, size=size.tiny)
+
+    // RESISTANCE 2 - hồng trung bình
+    if not na(r2)
+        r2Bot = r2
+        r2Top = r2 + halfZone
+        r2Box := box.new(zoneLeft, r2Top, zoneRight, r2Bot, border_color=color.new(#E91E63, 50), bgcolor=color.new(#E91E63, 83), border_width=1)
+        r2Lbl2 := label.new(zoneRight, (r2Top + r2Bot) / 2, "R2", style=label.style_label_left, color=color.new(#E91E63, 50), textcolor=color.white, size=size.tiny)
+
+    // RESISTANCE 3 - hồng nhạt nhất (xa giá nhất)
+    if not na(r3)
+        r3Bot = r3
+        r3Top = r3 + halfZone
+        r3Box := box.new(zoneLeft, r3Top, zoneRight, r3Bot, border_color=color.new(#E91E63, 70), bgcolor=color.new(#E91E63, 90), border_width=1)
+        r3Lbl2 := label.new(zoneRight, (r3Top + r3Bot) / 2, "R3", style=label.style_label_left, color=color.new(#E91E63, 70), textcolor=color.white, size=size.tiny)
+
+// ===== ENTRY SIGNALS & FILTERS =====
+pullbackBuyOk  = close < emaFast + (atr * 0.8)
+pullbackSellOk = close > emaFast - (atr * 0.8)
+
+buySignal  = bullPercent > probThresh and emaFast > emaSlow and close > emaFast and rsi < rsiOB and adxVal > 15 and htfBull and pullbackBuyOk
+sellSignal = bearPercent > probThresh and emaFast < emaSlow and close < emaFast and rsi > rsiOS and adxVal > 15 and htfBear and pullbackSellOk
+
+buyFiltered  = buySignal  and not buySignal[1]
+sellFiltered = sellSignal and not sellSignal[1]
+
+plotshape(buyFiltered,  title="BUY",  location=location.belowbar, color=#00E676, style=shape.labelup,   size=size.normal, text="BUY",  textcolor=color.white)
+plotshape(sellFiltered, title="SELL", location=location.abovebar, color=#FF1744, style=shape.labeldown, size=size.normal, text="SELL", textcolor=color.white)
+
+// ===== ADAPTIVE TP/SL MULTI-LEVEL =====
+recentSwingLow  = ta.lowest(low, 15)
+recentSwingHigh = ta.highest(high, 15)
+
+avgBody5    = ta.sma(math.abs(close - open), 5)
+avgRange5   = ta.sma(high - low, 5)
+scalpBase   = math.max(atr, (avgBody5 + avgRange5) / 2, 0.5)
+
+var float activeTP1   = na
+var float activeTP2   = na
+var float activeTP3   = na
+var float activeSL    = na
+var float activeEntry = na
+var int   activeDir   = 0
+var int   entryBar    = 0
+
+var bool  tpHit1      = false
+var bool  tpHit2      = false
+var bool  tpHit3      = false
+var bool  slHit       = false
+
+var line  tp1Line   = na
+var line  tp2Line   = na
+var line  tp3Line   = na
+var line  slLine    = na
+var line  entryLine = na
+
+var label tp1Lbl    = na
+var label tp2Lbl    = na
+var label tp3Lbl    = na
+var label slLbl     = na
+var label entryLbl  = na
+
+// ===== STRONG PRICE JUMP DETECTION =====
+// Phát hiện nhảy giá mạnh: nến hiện tại có body > 2x ATR
+strongJump = math.abs(close - open) > (atr * 2)
+
+// Rule: Nếu đang có lệnh active và xảy ra nhảy giá mạnh,
+// KHÔNG reset TP/SL - giữ nguyên để theo dõi winrate
+// Chỉ block tín hiệu mới trong khi lệnh cũ còn active
+blockNewSignal = activeDir != 0 and strongJump
+
+if buyFiltered and not blockNewSignal
+    line.delete(tp1Line), line.delete(tp2Line), line.delete(tp3Line), line.delete(slLine), line.delete(entryLine)
+    label.delete(tp1Lbl), label.delete(tp2Lbl), label.delete(tp3Lbl), label.delete(slLbl), label.delete(entryLbl)
+    activeEntry := close
+    activeTP1   := close + scalpBase * tp1Mult
+    activeTP2   := close + scalpBase * tp2Mult
+    activeTP3   := close + scalpBase * tp3Mult
+
+    minSL = close - (scalpBase * 0.8)
+    structSL = recentSwingLow - (atr * 0.2)
+    activeSL    := math.min(minSL, structSL)
+
+    activeDir   := 1
+    entryBar    := bar_index
+    tpHit1 := false, tpHit2 := false, tpHit3 := false
+    slHit       := false
+    if showTP_SL
+        entryLine := line.new(bar_index, close,    bar_index + 30, close,    color=color.new(#42A5F5, 40), style=line.style_dotted, width=1)
+        tp1Line   := line.new(bar_index, activeTP1, bar_index + 30, activeTP1, color=color.new(#00E676, 40), style=line.style_dashed, width=1)
+        tp2Line   := line.new(bar_index, activeTP2, bar_index + 30, activeTP2, color=color.new(#00E676, 20), style=line.style_dashed, width=1)
+        tp3Line   := line.new(bar_index, activeTP3, bar_index + 30, activeTP3, color=#00E676, style=line.style_dashed, width=2)
+        slLine    := line.new(bar_index, activeSL, bar_index + 30, activeSL, color=#FF1744, style=line.style_dashed, width=2)
+
+        entryLbl  := label.new(bar_index + 31, close, "E " + str.tostring(math.round(close, 2)), style=label.style_label_left, color=color.new(#42A5F5, 30), textcolor=color.white, size=size.tiny)
+        tp1Lbl    := label.new(bar_index + 31, activeTP1, "TP1 " + str.tostring(math.round(activeTP1, 2)), style=label.style_label_left, color=color.new(#00E676, 40), textcolor=color.white, size=size.tiny)
+        tp2Lbl    := label.new(bar_index + 31, activeTP2, "TP2 " + str.tostring(math.round(activeTP2, 2)), style=label.style_label_left, color=color.new(#00E676, 20), textcolor=color.white, size=size.tiny)
+        tp3Lbl    := label.new(bar_index + 31, activeTP3, "TP3 " + str.tostring(math.round(activeTP3, 2)), style=label.style_label_left, color=#00E676, textcolor=color.white, size=size.tiny)
+        slLbl     := label.new(bar_index + 31, activeSL, "SL SAFE " + str.tostring(math.round(activeSL, 2)), style=label.style_label_left, color=#FF1744, textcolor=color.white, size=size.tiny)
+
+if sellFiltered and not blockNewSignal
+    line.delete(tp1Line), line.delete(tp2Line), line.delete(tp3Line), line.delete(slLine), line.delete(entryLine)
+    label.delete(tp1Lbl), label.delete(tp2Lbl), label.delete(tp3Lbl), label.delete(slLbl), label.delete(entryLbl)
+    activeEntry := close
+    activeTP1   := close - scalpBase * tp1Mult
+    activeTP2   := close - scalpBase * tp2Mult
+    activeTP3   := close - scalpBase * tp3Mult
+
+    minSL = close + (scalpBase * 0.8)
+    structSL = recentSwingHigh + (atr * 0.2)
+    activeSL    := math.max(minSL, structSL)
+
+    activeDir   := -1
+    entryBar    := bar_index
+    tpHit1 := false, tpHit2 := false, tpHit3 := false
+    slHit       := false
+    if showTP_SL
+        entryLine := line.new(bar_index, close,    bar_index + 30, close,    color=color.new(#42A5F5, 40), style=line.style_dotted, width=1)
+        tp1Line   := line.new(bar_index, activeTP1, bar_index + 30, activeTP1, color=color.new(#00E676, 40), style=line.style_dashed, width=1)
+        tp2Line   := line.new(bar_index, activeTP2, bar_index + 30, activeTP2, color=color.new(#00E676, 20), style=line.style_dashed, width=1)
+        tp3Line   := line.new(bar_index, activeTP3, bar_index + 30, activeTP3, color=#00E676, style=line.style_dashed, width=2)
+        slLine    := line.new(bar_index, activeSL, bar_index + 30, activeSL, color=#FF1744, style=line.style_dashed, width=2)
+
+        entryLbl  := label.new(bar_index + 31, close, "E " + str.tostring(math.round(close, 2)), style=label.style_label_left, color=color.new(#42A5F5, 30), textcolor=color.white, size=size.tiny)
+        tp1Lbl    := label.new(bar_index + 31, activeTP1, "TP1 " + str.tostring(math.round(activeTP1, 2)), style=label.style_label_left, color=color.new(#00E676, 40), textcolor=color.white, size=size.tiny)
+        tp2Lbl    := label.new(bar_index + 31, activeTP2, "TP2 " + str.tostring(math.round(activeTP2, 2)), style=label.style_label_left, color=color.new(#00E676, 20), textcolor=color.white, size=size.tiny)
+        tp3Lbl    := label.new(bar_index + 31, activeTP3, "TP3 " + str.tostring(math.round(activeTP3, 2)), style=label.style_label_left, color=#00E676, textcolor=color.white, size=size.tiny)
+        slLbl     := label.new(bar_index + 31, activeSL, "SL SAFE " + str.tostring(math.round(activeSL, 2)), style=label.style_label_left, color=#FF1744, textcolor=color.white, size=size.tiny)
+
+// ===== TP/SL HIT DETECTION (MULTI-LEVEL) =====
+if activeDir == 1 and not slHit
+    if high >= activeTP1 and not tpHit1
+        tpHit1 := true
+        label.new(bar_index, activeTP1, "Hit TP1", style=label.style_label_down, color=color.new(#00E676, 30), textcolor=color.white, size=size.tiny)
+    if high >= activeTP2 and not tpHit2
+        tpHit2 := true
+        label.new(bar_index, activeTP2, "Hit TP2", style=label.style_label_down, color=color.new(#00E676, 15), textcolor=color.white, size=size.tiny)
+    if high >= activeTP3 and not tpHit3
+        tpHit3 := true
+        label.new(bar_index, activeTP3, "FULL TP", style=label.style_label_down, color=#00E676, textcolor=color.white, size=size.tiny)
+        activeDir := 0
+
+    if low <= activeSL and not tpHit3
+        slHit := true
+        slText  = tpHit1 ? "Trail SL" : "LOSS"
+        slColor = tpHit1 ? #FFC107 : #FF1744
+        label.new(bar_index, low, slText, style=label.style_label_up, color=slColor, textcolor=color.white, size=size.tiny)
+        activeDir := 0
+
+if activeDir == -1 and not slHit
+    if low <= activeTP1 and not tpHit1
+        tpHit1 := true
+        label.new(bar_index, low, "Hit TP1", style=label.style_label_up, color=color.new(#00E676, 30), textcolor=color.white, size=size.tiny)
+    if low <= activeTP2 and not tpHit2
+        tpHit2 := true
+        label.new(bar_index, low, "Hit TP2", style=label.style_label_up, color=color.new(#00E676, 15), textcolor=color.white, size=size.tiny)
+    if low <= activeTP3 and not tpHit3
+        tpHit3 := true
+        label.new(bar_index, low, "FULL TP", style=label.style_label_up, color=#00E676, textcolor=color.white, size=size.tiny)
+        activeDir := 0
+
+    if high >= activeSL and not tpHit3
+        slHit := true
+        slText  = tpHit1 ? "Trail SL" : "LOSS"
+        slColor = tpHit1 ? #FFC107 : #FF1744
+        label.new(bar_index, high, slText, style=label.style_label_down, color=slColor, textcolor=color.white, size=size.tiny)
+        activeDir := 0
+
+// ===== LIQUIDITY MONITORING (Theo dõi thanh khoản sau khi đặt lệnh) =====
+// Sau khi đặt lệnh, liên tục kiểm tra nến để xem lệnh có thể thanh khoản nhanh không
+// Nếu giá di chuyển quá chậm (ít hơn liqMinMove * ATR trong liqCheckBars nến), cảnh báo
+var bool  liqWarned     = false
+var label liqWarnLbl    = na
+var label liqSuggestLbl = na
+var line  liqSuggestLn1 = na
+var line  liqSuggestLn2 = na
+
+barsSinceEntry = bar_index - entryBar
+
+// Tính khoảng di chuyển giá kể từ entry
+priceMoveSinceEntry = activeDir == 1 ? (high - activeEntry) : activeDir == -1 ? (activeEntry - low) : 0.0
+expectedMove = atr * liqMinMove
+
+// Kiểm tra thanh khoản kém sau N nến
+liqIsSlow = activeDir != 0 and not slHit and not tpHit1 and barsSinceEntry >= liqCheckBars and priceMoveSinceEntry < expectedMove
+
+// Tìm vùng thanh khoản ngay lập tức dựa trên thị trường
+// Sử dụng VWAP-like approach: vùng có volume cao nhất gần đây
+nearHighVol = ta.highest(volume, 10)
+nearHighVolBar = ta.highestbars(volume, 10)
+
+// Vùng thanh khoản nhanh = vùng có volume cao nhất gần đây +/- halfZone
+var float quickLiqHigh = na
+var float quickLiqLow  = na
+
+if liqIsSlow and not liqWarned and showLiqAlert
+    liqWarned := true
+
+    // Tìm giá tại thanh có volume cao nhất
+    volBarIdx = math.abs(nearHighVolBar)
+    highVolPrice = close[volBarIdx]
+
+    quickLiqHigh := highVolPrice + halfZone
+    quickLiqLow  := highVolPrice - halfZone
+
+    // Cảnh báo thanh khoản kém
+    warnText = "THANH KHOAN CHAM\nGia chua di chuyen du"
+    liqWarnLbl := label.new(bar_index, activeDir == 1 ? low - atr * 0.3 : high + atr * 0.3, warnText, style=activeDir == 1 ? label.style_label_up : label.style_label_down, color=color.new(#FFC107, 10), textcolor=color.white, size=size.tiny)
+
+    // Gợi ý vùng thanh khoản ngay lập tức
+    suggestText = "Vung TK nhanh: " + str.tostring(math.round(quickLiqLow, 2)) + " - " + str.tostring(math.round(quickLiqHigh, 2))
+    suggestY = activeDir == 1 ? low - atr * 0.6 : high + atr * 0.6
+    liqSuggestLbl := label.new(bar_index, suggestY, suggestText, style=activeDir == 1 ? label.style_label_up : label.style_label_down, color=color.new(#FF9800, 20), textcolor=color.white, size=size.tiny)
+
+    // Vẽ vùng thanh khoản gợi ý
+    liqSuggestLn1 := line.new(bar_index - 5, quickLiqHigh, bar_index + 10, quickLiqHigh, color=color.new(#FF9800, 30), style=line.style_dotted, width=2)
+    liqSuggestLn2 := line.new(bar_index - 5, quickLiqLow, bar_index + 10, quickLiqLow, color=color.new(#FF9800, 30), style=line.style_dotted, width=2)
+
+    alert("THANH KHOAN CHAM | Gia chua di chuyen du sau " + str.tostring(liqCheckBars) + " nen. Vung TK nhanh: " + str.tostring(math.round(quickLiqLow, 2)) + " - " + str.tostring(math.round(quickLiqHigh, 2)), alert.freq_once_per_bar)
+
+// Reset cảnh báo khi có lệnh mới
+if buyFiltered or sellFiltered
+    liqWarned := false
+    label.delete(liqWarnLbl)
+    label.delete(liqSuggestLbl)
+    line.delete(liqSuggestLn1)
+    line.delete(liqSuggestLn2)
+
+// Nếu giá bắt đầu di chuyển tốt sau cảnh báo, thông báo
+liqRecovered = liqWarned and priceMoveSinceEntry >= expectedMove * 1.5
+var bool liqRecoveryNotified = false
+
+if liqRecovered and not liqRecoveryNotified
+    liqRecoveryNotified := true
+    recText = "TK HOI PHUC"
+    label.new(bar_index, activeDir == 1 ? high + atr * 0.2 : low - atr * 0.2, recText, style=activeDir == 1 ? label.style_label_down : label.style_label_up, color=color.new(#00BCD4, 20), textcolor=color.white, size=size.tiny)
+
+if buyFiltered or sellFiltered
+    liqRecoveryNotified := false
+
+// ===== WIN/LOSS TRACKING (Tối ưu Rebate) =====
+var int totalTrades = 0
+var int wins        = 0
+var int losses      = 0
+
+if tpHit1 and not tpHit1[1]
+    totalTrades += 1
+    wins        += 1
+
+if slHit and not slHit[1] and not tpHit1
+    totalTrades += 1
+    losses      += 1
+
+winRate = totalTrades > 0 ? wins / totalTrades * 100 : 0
+
+// ===== DASHBOARD =====
+var table dash = table.new(position.top_right, 2, 10, border_width=1, border_color=color.new(color.white, 70), frame_width=1, frame_color=color.new(color.white, 70))
+
+if showDash and barstate.islast
+    table.cell(dash, 0, 0, "XAUUSD SCALP", text_color=color.white, text_size=size.normal, bgcolor=color.new(#1E1E1E, 0), text_halign=text.align_center)
+    table.cell(dash, 1, 0, "TPx3 v9",       text_color=color.white, text_size=size.normal, bgcolor=color.new(#1E1E1E, 0), text_halign=text.align_center)
+
+    bullBG = bullSmooth > 60 ? color.new(#00C853, 20) : color.new(#00C853, 60)
+    bearBG = bearSmooth > 60 ? color.new(#FF1744, 20) : color.new(#FF1744, 60)
+    table.cell(dash, 0, 1, "BULL " + str.tostring(math.round(bullSmooth, 1)) + "%", text_color=color.white, text_size=size.normal, bgcolor=bullBG, text_halign=text.align_center)
+    table.cell(dash, 1, 1, "BEAR " + str.tostring(math.round(bearSmooth, 1)) + "%", text_color=color.white, text_size=size.normal, bgcolor=bearBG, text_halign=text.align_center)
+
+    trendText  = isBullish ? "BULLISH" : isBearish ? "BEARISH" : "NEUTRAL"
+    trendColor = isBullish ? color.new(#00C853, 10) : isBearish ? color.new(#FF1744, 10) : color.new(#FFC107, 10)
+    table.cell(dash, 0, 2, "TREND", text_color=color.new(color.white, 30), text_size=size.small, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_center)
+    table.cell(dash, 1, 2, trendText, text_color=color.white, text_size=size.normal, bgcolor=trendColor, text_halign=text.align_center)
+
+    htfText = htfBull ? "H1/H4 TANG" : htfBear ? "H1/H4 GIAM" : "MIXED"
+    htfColor = htfBull ? color.new(#00C853, 10) : htfBear ? color.new(#FF1744, 10) : color.new(#FFC107, 10)
+    table.cell(dash, 0, 3, "HTF FILTER", text_color=color.new(color.white, 30), text_size=size.small, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_center)
+    table.cell(dash, 1, 3, htfText, text_color=color.white, text_size=size.normal, bgcolor=htfColor, text_halign=text.align_center)
+
+    adxColor = adxVal > 15 ? color.new(#42A5F5, 10) : color.new(#555555, 10)
+    adxText  = str.tostring(math.round(adxVal, 1)) + (adxVal > 15 ? " VALID" : " CHOPPY")
+    table.cell(dash, 0, 4, "ADX (Vol)", text_color=color.new(color.white, 30), text_size=size.small, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_center)
+    table.cell(dash, 1, 4, adxText, text_color=color.white, text_size=size.normal, bgcolor=adxColor, text_halign=text.align_center)
+
+    wrColor = winRate >= 60 ? color.new(#00C853, 10) : winRate >= 40 ? color.new(#FFC107, 10) : color.new(#FF1744, 10)
+    wrText = str.tostring(wins) + "W / " + str.tostring(losses) + "L  (" + str.tostring(math.round(winRate, 1)) + "%)"
+    table.cell(dash, 0, 5, "W/L (Hit TP1)", text_color=color.new(color.white, 30), text_size=size.small, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_center)
+    table.cell(dash, 1, 5, wrText, text_color=color.white, text_size=size.normal, bgcolor=wrColor, text_halign=text.align_center)
+
+    // Liquidity monitor status
+    liqStatus = activeDir != 0 ? (liqIsSlow ? "CHAM" : "TOT") : "---"
+    liqColor  = activeDir != 0 ? (liqIsSlow ? color.new(#FFC107, 10) : color.new(#00C853, 10)) : color.new(#555555, 10)
+    table.cell(dash, 0, 6, "THANH KHOAN", text_color=color.new(color.white, 30), text_size=size.small, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_center)
+    table.cell(dash, 1, 6, liqStatus, text_color=color.white, text_size=size.normal, bgcolor=liqColor, text_halign=text.align_center)
+
+    // Active trade info
+    tradeStatus = activeDir == 1 ? "BUY ACTIVE" : activeDir == -1 ? "SELL ACTIVE" : "NO TRADE"
+    tradeColor  = activeDir == 1 ? color.new(#00C853, 10) : activeDir == -1 ? color.new(#FF1744, 10) : color.new(#555555, 10)
+    table.cell(dash, 0, 7, "LENH", text_color=color.new(color.white, 30), text_size=size.small, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_center)
+    table.cell(dash, 1, 7, tradeStatus, text_color=color.white, text_size=size.normal, bgcolor=tradeColor, text_halign=text.align_center)
+
+    // Strong jump warning
+    jumpText  = strongJump ? "NHAY GIA MANH!" : "Binh thuong"
+    jumpColor = strongJump ? color.new(#FF9800, 10) : color.new(#555555, 10)
+    table.cell(dash, 0, 8, "JUMP", text_color=color.new(color.white, 30), text_size=size.small, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_center)
+    table.cell(dash, 1, 8, jumpText, text_color=color.white, text_size=size.normal, bgcolor=jumpColor, text_halign=text.align_center)
+
+    // Zones status
+    zoneText = showZones ? "7 VUNG ON" : "TAT"
+    table.cell(dash, 0, 9, "ZONES", text_color=color.new(color.white, 30), text_size=size.small, bgcolor=color.new(#2A2A2A, 0), text_halign=text.align_center)
+    table.cell(dash, 1, 9, zoneText, text_color=color.white, text_size=size.normal, bgcolor=color.new(#42A5F5, 10), text_halign=text.align_center)
+
+// ===== ALERTS =====
+if tpHit1 and not tpHit1[1]
+    alert('HIT TP 1 | Price reached first target', alert.freq_once_per_bar)
+if tpHit2 and not tpHit2[1]
+    alert('HIT TP 2 | Price reached second target', alert.freq_once_per_bar)
+if tpHit3 and not tpHit3[1]
+    alert('HIT FULL TP | All targets reached', alert.freq_once_per_bar)
+
+// Alert khi nhảy giá mạnh mà có lệnh đang active
+if strongJump and activeDir != 0
+    alert("NHAY GIA MANH | Giu nguyen TP/SL de theo doi winrate. Dir=" + (activeDir == 1 ? "BUY" : "SELL"), alert.freq_once_per_bar)
