@@ -143,6 +143,7 @@ input:disabled {
 
 .room-info {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   color: #aeb9bf;
@@ -157,6 +158,23 @@ input:disabled {
 .room-info button {
   padding: 7px 11px;
   font-size: 12px;
+}
+
+.name-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #cbd4d8;
+  font-size: 13px;
+}
+
+.name-control input {
+  width: 140px;
+  padding: 7px 9px;
+  background: #070b0f;
+  border: 1px solid #45535d;
+  border-radius: 8px;
+  color: #fff;
 }
 
 .table-wrap {
@@ -455,6 +473,20 @@ input:disabled {
   pointer-events: none;
 }
 
+.flying-card {
+  position: absolute;
+  z-index: 8;
+  width: 72px;
+  height: 102px;
+  pointer-events: none;
+  animation: card-flight 0.78s cubic-bezier(0.16, 0.84, 0.25, 1) both;
+}
+
+.flying-card .playing-card {
+  width: 72px;
+  height: 102px;
+}
+
 .chip-flight.from-0 {
   left: 50%;
   top: 84%;
@@ -575,6 +607,27 @@ input:disabled {
   }
 }
 
+@keyframes card-flight {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(-18deg) scale(0.54);
+  }
+  14% {
+    opacity: 1;
+  }
+  72% {
+    left: var(--end-left);
+    top: var(--end-top);
+    transform: translate(-50%, -50%) rotate(4deg) scale(1.04);
+  }
+  100% {
+    opacity: 0;
+    left: var(--end-left);
+    top: var(--end-top);
+    transform: translate(-50%, -50%) rotate(0) scale(1);
+  }
+}
+
 @media (max-width: 720px) {
   .table {
     height: 540px;
@@ -601,7 +654,9 @@ input:disabled {
   }
 
   .game header {
-    padding: 0 10px;
+    height: auto;
+    min-height: 84px;
+    padding: 8px 10px;
   }
 
   .brand.small {
@@ -610,6 +665,7 @@ input:disabled {
 
   .room-info {
     margin: auto;
+    justify-content: center;
   }
 
   .lobby h1 {

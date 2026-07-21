@@ -5,7 +5,7 @@ os.environ.setdefault("POKER_DATABASE_URL", "sqlite:///test_poker_history.db")
 
 from fastapi.testclient import TestClient
 
-from server import Player, Room, app, room_payload
+from server import DEFAULT_ROOM_CODE, Player, Room, app, room_payload, rooms
 
 
 class TestOnlineRoom(unittest.TestCase):
@@ -77,6 +77,16 @@ class TestOnlineApp(unittest.TestCase):
         self.assertEqual(client.get("/health").json()["status"], "ok")
         code = client.post("/api/rooms").json()["code"]
         self.assertEqual(len(code), 5)
+
+    def test_default_table_is_created_on_connect(self):
+        rooms.pop(DEFAULT_ROOM_CODE, None)
+        client = TestClient(app)
+
+        with client.websocket_connect(f"/ws/{DEFAULT_ROOM_CODE}/player-a?name=An") as socket:
+            payload = socket.receive_json()
+
+        self.assertEqual(payload["room"], DEFAULT_ROOM_CODE)
+        self.assertTrue(payload["host"])
 
 
 if __name__ == "__main__":

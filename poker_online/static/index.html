@@ -4,30 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>POKER Online</title>
-  <link rel="stylesheet" href="/static/style.css?v=20260721c">
+  <link rel="stylesheet" href="/static/style.css?v=20260721d">
 </head>
 <body>
   <main>
-    <section id="lobby" class="lobby card-panel">
-      <div class="brand">♠ <span>POKER</span></div>
-      <h1>Chơi cùng bạn bè</h1>
-      <p>Tạo một bàn riêng hoặc nhập mã mời. Không cần đăng ký tài khoản.</p>
-      <label>Tên của bạn<input id="name" maxlength="18" placeholder="Ví dụ: Tân"></label>
-      <label>Mã phòng<input id="room-code" maxlength="5" placeholder="ABCDE"></label>
-      <div class="lobby-actions">
-        <button id="create" class="gold">TẠO PHÒNG</button>
-        <button id="join">VÀO PHÒNG</button>
-      </div>
-      <div id="lobby-error" class="error"></div>
-    </section>
-
-    <section id="game" class="game hidden">
+    <section id="game" class="game">
       <header>
         <div class="brand small">♠ <span>POKER</span></div>
-        <div class="room-info">PHÒNG <strong id="room-label"></strong>
-          <button id="copy">SAO CHÉP MÃ MỜI</button>
+        <div class="room-info">
+          <span>BÀN CHUNG <strong id="room-label">POKER</strong></span>
+          <label class="name-control">Tên <input id="name" maxlength="18"></label>
+          <button id="rename">LƯU TÊN</button>
+          <button id="copy">SAO CHÉP LINK</button>
         </div>
       </header>
+
       <div class="table-wrap">
         <div class="table">
           <div class="dealer-zone"><div class="dealer-head">♣</div><b>DEALER</b></div>
@@ -35,10 +26,11 @@
           <div class="center-zone">
             <div id="board" class="cards board"></div>
             <div id="pot" class="pot">POT • 0</div>
-            <div id="message" class="message">Đang chờ người chơi</div>
+            <div id="message" class="message">Đang kết nối bàn chơi...</div>
           </div>
         </div>
       </div>
+
       <div class="controls card-panel">
         <button id="start" class="gold hidden">CHIA BÀI</button>
         <div id="actions" class="hidden">
@@ -50,10 +42,10 @@
           </div>
           <button data-action="raise" class="gold">RAISE</button>
         </div>
-        <span id="turn-note">Chờ chủ phòng bắt đầu…</span>
+        <span id="turn-note">Đang kết nối...</span>
       </div>
     </section>
   </main>
-  <script src="/static/app.js?v=20260721c" defer></script>
+  <script src="/static/app.js?v=20260721d" defer></script>
 </body>
 </html>

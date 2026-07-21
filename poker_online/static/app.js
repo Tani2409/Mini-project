@@ -1,12 +1,8 @@
 const $ = (selector) => document.querySelector(selector);
 
-let ws;
-let state;
-let previousState;
-let pendingAction = false;
-let lastEventKey = "";
-
+const DEFAULT_ROOM = "POKER";
 const playerId = localStorage.pokerPlayerId || (localStorage.pokerPlayerId = crypto.randomUUID());
+const fallbackName = `Player ${playerId.slice(-4).toUpperCase()}`;
 const suits = { s: "♠", h: "♥", d: "♦", c: "♣" };
 const chipColors = [
   ["black", 100],
@@ -15,6 +11,14 @@ const chipColors = [
   ["gold", 5],
   ["white", 1],
 ];
+
+let ws;
+let state;
+let previousState;
+let pendingAction = false;
+let lastAnimatedHand = 0;
+let lastAnimatedBoardCount = 0;
+let lastEventKey = "";
 
 function esc(value) {
   return String(value).replace(/[&<>'"]/g, (char) => ({
@@ -26,6 +30,15 @@ function esc(value) {
   }[char]));
 }
 
+function currentName() {
+  return ($("#name").value.trim() || localStorage.pokerName || fallbackName).slice(0, 18);
+}
+
+function setStatus(message) {
+  $("#message").textContent = message;
+  $("#turn-note").textContent = message;
+}
+
 function cardHtml(code, hidden = false, extraClass = "") {
   if (hidden) {
     return `<div class="playing-card back ${extraClass}">♠</div>`;
@@ -34,18 +47,6 @@ function cardHtml(code, hidden = false, extraClass = "") {
   const suit = suits[code[1]] || "";
   const red = "hd".includes(code[1]) ? " red" : "";
   return `<div class="playing-card${red} ${extraClass}"><b>${rank}</b><span>${suit}</span></div>`;
-}
-
-function boardCardHtml(code, index) {
-  const isNew = newBoardCard(code, index);
-  const classes = ["board-card"];
-  if (isNew) {
-    classes.push("from-dealer");
-  }
-  return cardHtml(code, false, classes.join(" ")) .replace(
-    'class="playing-card',
-    `style="--deal-index:${index}" class="playing-card`
-  );
 }
 
 function chipStack(amount, label = "") {
@@ -64,78 +65,47 @@ function chipStack(amount, label = "") {
   return `<div class="chip-stack">${chips.join("")}${label ? `<span>${label}</span>` : ""}</div>`;
 }
 
-function newBoardCard(code, index) {
-  if (!previousState || previousState.hand !== state.hand) {
-    return "dealt";
-  }
-  return previousState.board[index] !== code ? "dealt" : "";
+function boardCardHtml(code, index) {
+  const isNew = previousState && previousState.hand === state.hand && previousState.board[index] !== code;
+  return cardHtml(code, false, isNew ? "board-card landing" : "board-card");
 }
 
 function playerCardsHtml(player) {
   if (player.cards.length) {
     return player.cards.map((card, index) => {
       const oldPlayer = previousState?.players?.find((p) => p.seat === player.seat);
-      const isNew = !oldPlayer || oldPlayer.cards[index] !== card || previousState.hand !== state.hand;
       const isReveal = state.finished && oldPlayer && oldPlayer.cards.length === 0;
-      return cardHtml(card, false, isReveal ? "flipped" : (isNew ? "dealt" : ""));
+      return cardHtml(card, false, isReveal ? "flipped" : "");
     }).join("");
   }
   if (!state.started) {
     return "";
   }
-  const oldPlayer = previousState?.players?.find((p) => p.seat === player.seat);
-  const hiddenIsNew = !oldPlayer || !previousState.started || previousState.hand !== state.hand;
-  return cardHtml("", true, hiddenIsNew ? "dealt" : "") + cardHtml("", true, hiddenIsNew ? "dealt delay" : "");
+  return cardHtml("", true) + cardHtml("", true);
 }
 
-async function enter(create) {
-  const name = $("#name").value.trim();
-  if (!name) {
-    return fail("Hãy nhập tên của bạn");
-  }
-
-  let code = $("#room-code").value.trim().toUpperCase();
-  try {
-    if (create) {
-      const response = await fetch("/api/rooms", { method: "POST" });
-      code = (await response.json()).code;
-    }
-    if (code.length !== 5) {
-      return fail("Mã phòng gồm 5 ký tự");
-    }
-    localStorage.pokerName = name;
-    connect(code, name);
-  } catch {
-    fail("Không tạo được phòng. Hãy đợi server Render thức dậy rồi thử lại.");
-  }
-}
-
-function fail(message) {
-  $("#lobby-error").textContent = message;
-}
-
-function connect(code, name) {
+function connect() {
+  const name = currentName();
+  localStorage.pokerName = name;
+  $("#name").value = name;
   const protocol = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${protocol}://${location.host}/ws/${code}/${playerId}?name=${encodeURIComponent(name)}`);
+  ws = new WebSocket(`${protocol}://${location.host}/ws/${DEFAULT_ROOM}/${playerId}?name=${encodeURIComponent(name)}`);
+
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.type === "error") {
       pendingAction = false;
       setActionDisabled(false);
-      return fail(data.message);
+      setStatus(data.message);
+      return;
     }
     previousState = state;
     state = data;
     pendingAction = false;
     render();
   };
-  ws.onopen = () => {
-    $("#lobby").classList.add("hidden");
-    $("#game").classList.remove("hidden");
-  };
-  ws.onclose = () => {
-    $("#message").textContent = "Mất kết nối - hãy tải lại trang";
-  };
+  ws.onopen = () => setStatus("Đã vào bàn POKER");
+  ws.onclose = () => setStatus("Mất kết nối - hãy tải lại trang");
 }
 
 function render() {
@@ -175,8 +145,8 @@ function render() {
   $("#actions").classList.toggle("hidden", !myTurn);
   $("#turn-note").classList.toggle("hidden", myTurn);
   $("#turn-note").textContent = state.started
-    ? (state.finished ? "Chờ chủ phòng chia ván mới..." : "Đang chờ người chơi khác...")
-    : "Chờ chủ phòng bắt đầu...";
+    ? (state.finished ? "Chờ chủ bàn chia ván mới..." : "Đang chờ người chơi khác...")
+    : "Chờ chủ bàn bắt đầu...";
 
   if (myTurn) {
     const slider = $("#raise");
@@ -186,14 +156,78 @@ function render() {
     $("#raise-value").textContent = slider.value;
   }
 
-  animateLastEvent();
+  animateTableEvents();
 }
 
-function animateLastEvent() {
+function animateTableEvents() {
+  if (!state.started) {
+    return;
+  }
+  if (state.hand !== lastAnimatedHand) {
+    lastAnimatedHand = state.hand;
+    lastAnimatedBoardCount = 0;
+    animateHoleDeal();
+  }
+  if (state.board.length > lastAnimatedBoardCount) {
+    const start = lastAnimatedBoardCount;
+    const cards = state.board.slice(start);
+    lastAnimatedBoardCount = state.board.length;
+    animateBoardDeal(start, cards);
+  }
+  animateChipEvent();
+}
+
+function animateHoleDeal() {
+  state.players.forEach((player, seatOrder) => {
+    for (let cardIndex = 0; cardIndex < 2; cardIndex += 1) {
+      const target = document.querySelector(`.seat-${player.seat} .cards .playing-card:nth-child(${cardIndex + 1})`);
+      if (target) {
+        flyCardTo(target, cardHtml("", true), seatOrder * 120 + cardIndex * 70);
+      }
+    }
+  });
+}
+
+function animateBoardDeal(startIndex, cards) {
+  cards.forEach((card, offset) => {
+    const target = document.querySelector(`#board .playing-card:nth-child(${startIndex + offset + 1})`);
+    if (target) {
+      flyCardTo(target, cardHtml(card), offset * 180);
+    }
+  });
+}
+
+function flyCardTo(target, html, delay = 0) {
+  const table = $(".table");
+  const dealer = $(".dealer-zone");
+  if (!table || !dealer || !target) {
+    return;
+  }
+
+  const tableRect = table.getBoundingClientRect();
+  const dealerRect = dealer.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const startX = dealerRect.left + dealerRect.width / 2 - tableRect.left;
+  const startY = dealerRect.top + dealerRect.height / 2 - tableRect.top;
+  const endX = targetRect.left + targetRect.width / 2 - tableRect.left;
+  const endY = targetRect.top + targetRect.height / 2 - tableRect.top;
+
+  const layer = document.createElement("div");
+  layer.className = "flying-card";
+  layer.innerHTML = html;
+  layer.style.left = `${startX}px`;
+  layer.style.top = `${startY}px`;
+  layer.style.setProperty("--end-left", `${endX}px`);
+  layer.style.setProperty("--end-top", `${endY}px`);
+  layer.style.animationDelay = `${delay}ms`;
+  table.appendChild(layer);
+  setTimeout(() => layer.remove(), delay + 900);
+}
+
+function animateChipEvent() {
   const event = state.lastEvent || {};
   const key = `${state.hand}:${event.kind}:${event.seat}:${event.amount}:${event.finished ? "done" : ""}`;
-  if (!event.kind || key === lastEventKey || event.kind === "deal") {
-    lastEventKey = key;
+  if (!event.kind || key === lastEventKey) {
     return;
   }
   lastEventKey = key;
@@ -231,19 +265,20 @@ function sendAction(action) {
   }));
 }
 
-$("#create").onclick = () => enter(true);
-$("#join").onclick = () => enter(false);
-$("#name").value = localStorage.pokerName || "";
-$("#room-code").oninput = (event) => {
-  event.target.value = event.target.value.toUpperCase();
-};
-$("#start").onclick = () => ws.send(JSON.stringify({ type: "start" }));
+$("#start").onclick = () => ws?.send(JSON.stringify({ type: "start" }));
 $("#copy").onclick = async () => {
-  await navigator.clipboard.writeText(state.room);
+  await navigator.clipboard.writeText(location.href);
   $("#copy").textContent = "ĐÃ SAO CHÉP";
   setTimeout(() => {
-    $("#copy").textContent = "SAO CHÉP MÃ MỜI";
+    $("#copy").textContent = "SAO CHÉP LINK";
   }, 1300);
+};
+$("#rename").onclick = () => {
+  const name = currentName();
+  localStorage.pokerName = name;
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "rename", name }));
+  }
 };
 $("#raise").oninput = (event) => {
   $("#raise-value").textContent = event.target.value;
@@ -251,3 +286,6 @@ $("#raise").oninput = (event) => {
 document.querySelectorAll("[data-action]").forEach((button) => {
   button.onclick = () => sendAction(button.dataset.action);
 });
+
+$("#name").value = localStorage.pokerName || fallbackName;
+connect();
