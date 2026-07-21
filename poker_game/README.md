@@ -2,6 +2,10 @@
 
 Game poker Texas Hold'em đơn giản: một người chơi đấu với máy.
 
+Luật chơi và hand-ranking sử dụng [PokerKit](https://github.com/uoftcprg/pokerkit)
+thông qua lớp adapter `poker_engine.py`. Adapter này cũng cung cấp state engine
+server-authoritative để phát triển bàn chơi online nhiều người sau này.
+
 ## Cài đặt và chạy
 
 ```powershell

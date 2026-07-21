@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: poker-online
+    runtime: python
+    plan: free
+    rootDir: poker_online
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
