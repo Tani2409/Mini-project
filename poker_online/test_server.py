@@ -1,4 +1,7 @@
 import unittest
+import os
+
+os.environ.setdefault("POKER_DATABASE_URL", "sqlite:///test_poker_history.db")
 
 from fastapi.testclient import TestClient
 
@@ -41,7 +44,30 @@ class TestOnlineRoom(unittest.TestCase):
         payload = room_payload(self.room, "a")
 
         self.assertTrue(payload["finished"])
+        self.assertTrue(any(player["winner"] for player in payload["players"]))
+        self.assertTrue(any(len(player["cards"]) == 2 for player in payload["players"]))
+
+    def test_showdown_reveals_all_non_folded_players(self):
+        limit = 20
+        while self.room.state.status and limit:
+            self.room.act(self.room.state.actor_index, "call")
+            limit -= 1
+
+        payload = room_payload(self.room, "a")
+
+        self.assertTrue(payload["finished"])
+        self.assertTrue(all(not player["folded"] for player in payload["players"]))
         self.assertTrue(all(len(player["cards"]) == 2 for player in payload["players"]))
+
+    def test_history_records_finished_hand(self):
+        self.room.act(self.room.state.actor_index, "fold")
+        client = TestClient(app)
+        response = client.get("/api/rooms/ABCDE/history")
+
+        self.assertEqual(response.status_code, 200)
+        hands = response.json()["hands"]
+        self.assertGreaterEqual(len(hands), 1)
+        self.assertTrue(any(player["winner"] for player in hands[0]["players"]))
 
 
 class TestOnlineApp(unittest.TestCase):

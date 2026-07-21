@@ -36,6 +36,18 @@ function cardHtml(code, hidden = false, extraClass = "") {
   return `<div class="playing-card${red} ${extraClass}"><b>${rank}</b><span>${suit}</span></div>`;
 }
 
+function boardCardHtml(code, index) {
+  const isNew = newBoardCard(code, index);
+  const classes = ["board-card"];
+  if (isNew) {
+    classes.push("from-dealer");
+  }
+  return cardHtml(code, false, classes.join(" ")) .replace(
+    'class="playing-card',
+    `style="--deal-index:${index}" class="playing-card`
+  );
+}
+
 function chipStack(amount, label = "") {
   let remaining = Math.max(0, Number(amount) || 0);
   const chips = [];
@@ -64,7 +76,8 @@ function playerCardsHtml(player) {
     return player.cards.map((card, index) => {
       const oldPlayer = previousState?.players?.find((p) => p.seat === player.seat);
       const isNew = !oldPlayer || oldPlayer.cards[index] !== card || previousState.hand !== state.hand;
-      return cardHtml(card, false, isNew ? "dealt" : "");
+      const isReveal = state.finished && oldPlayer && oldPlayer.cards.length === 0;
+      return cardHtml(card, false, isReveal ? "flipped" : (isNew ? "dealt" : ""));
     }).join("");
   }
   if (!state.started) {
@@ -133,7 +146,7 @@ function render() {
   $("#room-label").textContent = state.room;
   $("#pot").innerHTML = `POT • ${state.pot}${chipStack(state.pot)}`;
   $("#message").textContent = state.message;
-  $("#board").innerHTML = state.board.map((card, index) => cardHtml(card, false, newBoardCard(card, index))).join("");
+  $("#board").innerHTML = state.board.map((card, index) => boardCardHtml(card, index)).join("");
 
   $("#seats").innerHTML = state.players.map((player) => {
     const name = esc(player.name);
@@ -141,12 +154,15 @@ function render() {
     const isTurn = state.actor === player.seat;
     const reveal = state.finished && player.cards.length;
     const cards = playerCardsHtml(player);
+    const resultText = state.finished
+      ? (player.winner ? `Thắng +${player.payoff}` : (player.folded ? "Fold" : `${player.payoff}`))
+      : (player.bet ? `Cược ${player.bet}${chipStack(player.bet)}` : "");
     return `
-      <div class="seat seat-${player.seat} ${isTurn ? "turn" : ""} ${player.connected ? "" : "offline"} ${reveal ? "showdown" : ""}">
+      <div class="seat seat-${player.seat} ${isTurn ? "turn" : ""} ${player.connected ? "" : "offline"} ${reveal ? "showdown" : ""} ${player.winner ? "winner" : ""} ${player.folded ? "folded" : ""}">
         <div class="avatar">${name[0].toUpperCase()}</div>
         <div class="seat-name">${name}${isViewer ? " (Bạn)" : ""}</div>
         <div class="seat-chips">${chipStack(player.chips, player.chips)}</div>
-        <div class="seat-bet">${player.bet ? `Cược ${player.bet}${chipStack(player.bet)}` : ""}</div>
+        <div class="seat-bet">${resultText}</div>
         <div class="cards">${cards}</div>
       </div>`;
   }).join("");

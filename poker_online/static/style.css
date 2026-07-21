@@ -260,6 +260,15 @@ input:disabled {
   animation: deal-card 0.56s cubic-bezier(0.17, 0.89, 0.28, 1.25) both;
 }
 
+.board .playing-card.from-dealer {
+  animation: deal-from-dealer 0.58s cubic-bezier(0.17, 0.89, 0.28, 1.25) both;
+  animation-delay: calc(var(--deal-index) * 0.11s);
+}
+
+.playing-card.flipped {
+  animation: flip-card 0.62s ease-out both;
+}
+
 .playing-card.delay {
   animation-delay: 0.12s;
 }
@@ -318,6 +327,17 @@ input:disabled {
 
 .seat.showdown .cards {
   filter: drop-shadow(0 0 10px #efc15eaa);
+}
+
+.seat.winner .avatar {
+  border-color: #7df0a6;
+  box-shadow: 0 0 24px #6df69e;
+}
+
+.seat.folded:not(.winner) .cards,
+.seat.folded:not(.winner) .avatar {
+  filter: grayscale(0.8);
+  opacity: 0.62;
 }
 
 .seat-name {
@@ -509,6 +529,36 @@ input:disabled {
   to {
     opacity: 1;
     transform: translateY(0) translateX(0) rotate(0) scale(1);
+  }
+}
+
+@keyframes deal-from-dealer {
+  from {
+    opacity: 0;
+    transform: translateY(-235px) rotate(-16deg) scale(0.72);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(8px) rotate(2deg) scale(1.03);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(0) scale(1);
+  }
+}
+
+@keyframes flip-card {
+  from {
+    transform: rotateY(86deg) scale(0.96);
+    filter: brightness(0.8);
+  }
+  55% {
+    transform: rotateY(-8deg) scale(1.04);
+    filter: brightness(1.18);
+  }
+  to {
+    transform: rotateY(0) scale(1);
+    filter: brightness(1);
   }
 }
 

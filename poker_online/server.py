@@ -9,10 +9,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pokerkit import Automation, NoLimitTexasHoldem
 
+from database import init_db, record_hand_result, room_history
+
 
 BASE_DIR = Path(__file__).parent
 app = FastAPI(title="POKER Online")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+init_db()
 
 AUTOMATIONS = tuple(Automation)
 
@@ -31,9 +34,11 @@ class Room:
     players: list[Player] = field(default_factory=list)
     state: object | None = None
     dealt_hole_cards: list[list[str]] = field(default_factory=list)
+    folded_seats: set[int] = field(default_factory=set)
     hand_number: int = 0
     message: str = "Đang chờ người chơi"
     last_event: dict = field(default_factory=dict)
+    result_recorded: bool = False
 
     def seat_of(self, player_id):
         return next((i for i, player in enumerate(self.players) if player.player_id == player_id), None)
@@ -51,6 +56,8 @@ class Room:
         )
         self.hand_number += 1
         self.dealt_hole_cards = [cards_to_strings(cards) for cards in self.state.hole_cards]
+        self.folded_seats = set()
+        self.result_recorded = False
         self.message = f"Ván #{self.hand_number} bắt đầu"
         self.last_event = {"kind": "deal", "hand": self.hand_number}
 
@@ -61,6 +68,7 @@ class Room:
             raise ValueError("Chưa đến lượt của bạn")
         if action == "fold" and self.state.can_fold():
             self.state.fold()
+            self.folded_seats.add(seat)
             self.message = f"{self.players[seat].name} đã fold"
             self.last_event = {"kind": "fold", "seat": seat}
         elif action == "call" and self.state.can_check_or_call():
@@ -79,6 +87,12 @@ class Room:
         if not self.state.status:
             self.message = "Ván bài kết thúc — chủ phòng có thể chia ván mới"
             self.last_event = {**self.last_event, "finished": True}
+            if not self.result_recorded:
+                try:
+                    record_hand_result(self)
+                except Exception as exc:
+                    print(f"Could not record hand result: {exc}")
+                self.result_recorded = True
 
 
 rooms: dict[str, Room] = {}
@@ -104,7 +118,8 @@ def room_payload(room: Room, viewer_id: str):
     players = []
     for seat, player in enumerate(room.players):
         hole = []
-        if finished and seat < len(room.dealt_hole_cards):
+        showdown_reveal = finished and seat not in room.folded_seats
+        if showdown_reveal and seat < len(room.dealt_hole_cards):
             hole = room.dealt_hole_cards[seat]
         elif playing and seat == viewer_seat:
             hole = cards_to_strings(state.hole_cards[seat])
@@ -116,6 +131,9 @@ def room_payload(room: Room, viewer_id: str):
             "chips": state.stacks[seat] if playing else 1000,
             "bet": state.bets[seat] if playing and state.status else 0,
             "active": state.statuses[seat] if playing else True,
+            "folded": seat in room.folded_seats,
+            "winner": bool(playing and not state.status and state.payoffs[seat] > 0),
+            "payoff": int(state.payoffs[seat]) if playing and not state.status else 0,
             "cards": hole,
         })
     board = []
@@ -170,6 +188,11 @@ async def create_room():
 @app.get("/health")
 async def health():
     return {"status": "ok", "rooms": len(rooms)}
+
+
+@app.get("/api/rooms/{room_code}/history")
+async def get_room_history(room_code: str, limit: int = 20):
+    return {"room": room_code.upper(), "hands": room_history(room_code, limit)}
 
 
 @app.websocket("/ws/{room_code}/{player_id}")
