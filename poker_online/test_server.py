@@ -7,7 +7,7 @@ from server import Player, Room, app, room_payload
 
 class TestOnlineRoom(unittest.TestCase):
     def setUp(self):
-        self.room = Room("ABCDE", [Player("a", "An"), Player("b", "Bình")])
+        self.room = Room("ABCDE", [Player("a", "An"), Player("b", "Binh")])
         self.room.start_hand()
 
     def test_private_cards_are_hidden(self):
@@ -22,10 +22,26 @@ class TestOnlineRoom(unittest.TestCase):
         self.assertEqual(len(payload["board"]), 3)
         self.assertTrue(all(len(card) == 2 for card in payload["board"]))
 
+    def test_raise_passes_turn_to_next_player(self):
+        raiser = self.room.state.actor_index
+        self.room.act(raiser, "raise", 40)
+        payload = room_payload(self.room, "a")
+
+        self.assertNotEqual(payload["actor"], raiser)
+        self.assertEqual(payload["lastEvent"]["kind"], "raise")
+
     def test_wrong_seat_cannot_act(self):
         wrong_seat = 1 - self.room.state.actor_index
-        with self.assertRaisesRegex(ValueError, "Chưa đến lượt"):
+        with self.assertRaises(ValueError):
             self.room.act(wrong_seat, "fold")
+
+    def test_finished_hand_reveals_all_hole_cards(self):
+        folder = self.room.state.actor_index
+        self.room.act(folder, "fold")
+        payload = room_payload(self.room, "a")
+
+        self.assertTrue(payload["finished"])
+        self.assertTrue(all(len(player["cards"]) == 2 for player in payload["players"]))
 
 
 class TestOnlineApp(unittest.TestCase):

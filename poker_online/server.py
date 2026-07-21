@@ -30,8 +30,10 @@ class Room:
     code: str
     players: list[Player] = field(default_factory=list)
     state: object | None = None
+    dealt_hole_cards: list[list[str]] = field(default_factory=list)
     hand_number: int = 0
     message: str = "Đang chờ người chơi"
+    last_event: dict = field(default_factory=dict)
 
     def seat_of(self, player_id):
         return next((i for i, player in enumerate(self.players) if player.player_id == player_id), None)
@@ -48,7 +50,9 @@ class Room:
             AUTOMATIONS, True, 0, (10, 20), 20, stacks, len(self.players)
         )
         self.hand_number += 1
+        self.dealt_hole_cards = [cards_to_strings(cards) for cards in self.state.hole_cards]
         self.message = f"Ván #{self.hand_number} bắt đầu"
+        self.last_event = {"kind": "deal", "hand": self.hand_number}
 
     def act(self, seat, action, amount=None):
         if self.state is None or not self.state.status:
@@ -58,19 +62,23 @@ class Room:
         if action == "fold" and self.state.can_fold():
             self.state.fold()
             self.message = f"{self.players[seat].name} đã fold"
+            self.last_event = {"kind": "fold", "seat": seat}
         elif action == "call" and self.state.can_check_or_call():
             operation = self.state.check_or_call()
             self.message = f"{self.players[seat].name} check/call {operation.amount}"
+            self.last_event = {"kind": "call", "seat": seat, "amount": int(operation.amount)}
         elif action == "raise":
             amount = int(amount or 0)
             if not self.state.can_complete_bet_or_raise_to(amount):
                 raise ValueError("Mức raise không hợp lệ")
             self.state.complete_bet_or_raise_to(amount)
             self.message = f"{self.players[seat].name} raise tới {amount}"
+            self.last_event = {"kind": "raise", "seat": seat, "amount": amount}
         else:
             raise ValueError("Hành động không hợp lệ")
         if not self.state.status:
             self.message = "Ván bài kết thúc — chủ phòng có thể chia ván mới"
+            self.last_event = {**self.last_event, "finished": True}
 
 
 rooms: dict[str, Room] = {}
@@ -96,7 +104,9 @@ def room_payload(room: Room, viewer_id: str):
     players = []
     for seat, player in enumerate(room.players):
         hole = []
-        if playing and (seat == viewer_seat or finished):
+        if finished and seat < len(room.dealt_hole_cards):
+            hole = room.dealt_hole_cards[seat]
+        elif playing and seat == viewer_seat:
             hole = cards_to_strings(state.hole_cards[seat])
         players.append({
             "id": player.player_id,
@@ -132,6 +142,7 @@ def room_payload(room: Room, viewer_id: str):
         "players": players,
         "minRaise": minimum,
         "maxRaise": maximum,
+        "lastEvent": room.last_event,
     }
 
 
